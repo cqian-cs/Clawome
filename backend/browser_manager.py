@@ -480,9 +480,19 @@ class BrowserManager:
             fresh = not self._browser
             if fresh:
                 self._playwright = sync_playwright().start()
+                chrome_args = ["--no-sandbox", "--disable-dev-shm-usage"]
+                # Window position & size (configurable via Settings)
+                win_x = int(cfg.get("browser_window_x") or 0)
+                win_y = int(cfg.get("browser_window_y") or 0)
+                win_w = int(cfg.get("browser_window_width") or 0)
+                win_h = int(cfg.get("browser_window_height") or 0)
+                if win_x > 0 or win_y > 0:
+                    chrome_args.append(f"--window-position={win_x},{win_y}")
+                if win_w > 0 and win_h > 0:
+                    chrome_args.append(f"--window-size={win_w},{win_h}")
                 self._browser = self._playwright.chromium.launch(
                     headless=cfg.get("headless"), channel="chrome",
-                    args=["--no-sandbox", "--disable-dev-shm-usage"],
+                    args=chrome_args,
                 )
                 self._context = self._browser.new_context(accept_downloads=True)
                 # Inject addEventListener interceptor BEFORE any page scripts.

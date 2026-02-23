@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   getConfig, setConfig, resetConfig,
   getCompressors, saveCompressor, deleteCompressor, getCompressorTemplate,
@@ -8,11 +9,11 @@ import './SettingsPage.css'
 // ── Navigation sections ──
 
 const SECTIONS = [
-  { key: 'general',   label: 'General',    icon: '\u2699' },
-  { key: 'timeouts',  label: 'Timeouts',   icon: '\u23F1' },
-  { key: 'agent',     label: 'Agent',      icon: '\u{1F916}' },
-  { key: 'scripts',   label: 'Scripts',    icon: '\u{1F4DC}' },
-  { key: 'rules',     label: 'URL Rules',  icon: '\u{1F517}' },
+  { key: 'general',   label: 'settings.general',    icon: '\u2699' },
+  { key: 'timeouts',  label: 'settings.timeouts',   icon: '\u23F1' },
+  { key: 'agent',     label: 'settings.agentTab',   icon: '\u{1F916}' },
+  { key: 'scripts',   label: 'settings.scripts',    icon: '\u{1F4DC}' },
+  { key: 'rules',     label: 'settings.urlRules',   icon: '\u{1F517}' },
 ]
 
 // ── Config group definitions per section ──
@@ -20,82 +21,87 @@ const SECTIONS = [
 const SECTION_GROUPS = {
   general: [
     {
-      title: 'Browser',
+      title: 'settings.browser',
       items: [
-        { key: 'headless', label: 'Headless Mode', unit: '', desc: 'Run browser without visible window (takes effect on next browser open). Note: some websites detect headless browsers and may block or return empty pages.', type: 'boolean' },
+        { key: 'headless', label: 'Headless Mode', unit: '', desc: 'settings.headlessDesc', type: 'boolean' },
+        { key: 'screen_refresh_interval', label: 'Screen Refresh', unit: 'ms', desc: 'settings.screenRefreshDesc' },
+        { key: 'browser_window_x', label: 'Window X', unit: 'px', desc: 'settings.windowXDesc' },
+        { key: 'browser_window_y', label: 'Window Y', unit: 'px', desc: 'settings.windowYDesc' },
+        { key: 'browser_window_width', label: 'Window Width', unit: 'px', desc: 'settings.windowWidthDesc' },
+        { key: 'browser_window_height', label: 'Window Height', unit: 'px', desc: 'settings.windowHeightDesc' },
       ],
     },
     {
-      title: 'DOM Walker',
+      title: 'settings.domWalker',
       items: [
-        { key: 'max_nodes', label: 'Max Nodes', unit: '', desc: 'Maximum DOM nodes to parse per page' },
-        { key: 'max_depth', label: 'Max Depth', unit: 'levels', desc: 'Maximum tree depth for DOM traversal' },
+        { key: 'max_nodes', label: 'Max Nodes', unit: '', desc: 'settings.maxNodesDesc' },
+        { key: 'max_depth', label: 'Max Depth', unit: 'levels', desc: 'settings.maxDepthDesc' },
       ],
     },
     {
-      title: 'DOM Lite Mode',
+      title: 'settings.domLite',
       items: [
-        { key: 'lite_text_max', label: 'Truncate Threshold', unit: 'chars', desc: 'Text longer than this is truncated in lite mode (0 = no truncation)' },
-        { key: 'lite_text_head', label: 'Keep Head Length', unit: 'chars', desc: 'Number of leading characters kept before the …(X chars omitted) marker' },
+        { key: 'lite_text_max', label: 'Truncate Threshold', unit: 'chars', desc: 'settings.truncateDesc' },
+        { key: 'lite_text_head', label: 'Keep Head Length', unit: 'chars', desc: 'settings.keepHeadDesc' },
       ],
     },
     {
-      title: 'Keyboard & Scroll',
+      title: 'settings.keyboardScroll',
       items: [
-        { key: 'type_delay', label: 'Type Delay', unit: 'ms', desc: 'Delay between keystrokes when typing' },
-        { key: 'scroll_pixels', label: 'Scroll Distance', unit: 'px', desc: 'Default scroll distance per step' },
+        { key: 'type_delay', label: 'Type Delay', unit: 'ms', desc: 'settings.typeDelayDesc' },
+        { key: 'scroll_pixels', label: 'Scroll Distance', unit: 'px', desc: 'settings.scrollDistDesc' },
       ],
     },
   ],
   agent: [
     {
-      title: 'LLM Provider',
+      title: 'settings.llmProvider',
       items: [
-        { key: 'llm_api_key', label: 'API Key', unit: '', desc: 'API key for the LLM provider (OpenAI-compatible endpoint)', type: 'password', placeholder: 'sk-...' },
-        { key: 'llm_api_base', label: 'API Base URL', unit: '', desc: 'OpenAI-compatible endpoint URL', type: 'text', placeholder: 'https://dashscope.aliyuncs.com/compatible-mode/v1' },
-        { key: 'llm_model', label: 'Model Name', unit: '', desc: 'Bare model name, no provider prefix. e.g. qwen3.5-plus, gpt-4o', type: 'text', placeholder: 'qwen3.5-plus' },
-        { key: 'llm_temperature', label: 'Temperature', unit: '', desc: '0 = deterministic, higher = more creative' },
-        { key: 'llm_max_tokens', label: 'Max Tokens', unit: 'tokens', desc: 'Maximum tokens per LLM response' },
+        { key: 'llm_api_key', label: 'API Key', unit: '', desc: 'settings.apiKeyDesc', type: 'password', placeholder: 'sk-...' },
+        { key: 'llm_api_base', label: 'API Base URL', unit: '', desc: 'settings.apiBaseDesc', type: 'text', placeholder: 'https://dashscope.aliyuncs.com/compatible-mode/v1' },
+        { key: 'llm_model', label: 'Model Name', unit: '', desc: 'settings.modelNameDesc', type: 'text', placeholder: 'qwen3.5-plus' },
+        { key: 'llm_temperature', label: 'Temperature', unit: '', desc: 'settings.temperatureDesc' },
+        { key: 'llm_max_tokens', label: 'Max Tokens', unit: 'tokens', desc: 'settings.maxTokensDesc' },
       ],
     },
     {
-      title: 'Agent Behavior',
+      title: 'settings.agentBehavior',
       items: [
-        { key: 'agent_max_steps', label: 'Max Steps per Subtask', unit: 'steps', desc: 'Maximum action steps before a subtask is force-completed' },
-        { key: 'agent_start_url', label: 'Start URL', unit: '', desc: 'Browser opens this URL at the start of each task', type: 'text', placeholder: 'https://www.baidu.com' },
+        { key: 'agent_max_steps', label: 'Max Steps per Subtask', unit: 'steps', desc: 'settings.maxStepsDesc' },
+        { key: 'agent_start_url', label: 'Start URL', unit: '', desc: 'settings.startUrlDesc', type: 'text', placeholder: 'https://www.baidu.com' },
       ],
     },
   ],
   timeouts: [
     {
-      title: 'Navigation Timeouts',
+      title: 'settings.navTimeouts',
       items: [
-        { key: 'nav_timeout', label: 'Navigation Timeout', unit: 'ms', desc: 'Timeout for page open / back / forward' },
-        { key: 'reload_timeout', label: 'Reload Timeout', unit: 'ms', desc: 'Timeout for page reload' },
+        { key: 'nav_timeout', label: 'Navigation Timeout', unit: 'ms', desc: 'settings.navTimeoutDesc' },
+        { key: 'reload_timeout', label: 'Reload Timeout', unit: 'ms', desc: 'settings.reloadTimeoutDesc' },
       ],
     },
     {
-      title: 'Page Load Waits',
+      title: 'settings.pageLoadWaits',
       items: [
-        { key: 'load_wait', label: 'DOM Content Loaded Wait', unit: 'ms', desc: 'Wait for DOM content loaded after action' },
-        { key: 'network_idle_wait', label: 'Network Idle Wait', unit: 'ms', desc: 'Wait for network idle after action' },
+        { key: 'load_wait', label: 'DOM Content Loaded Wait', unit: 'ms', desc: 'settings.loadWaitDesc' },
+        { key: 'network_idle_wait', label: 'Network Idle Wait', unit: 'ms', desc: 'settings.networkIdleDesc' },
       ],
     },
     {
-      title: 'Interaction Timeouts',
+      title: 'settings.interactionTimeouts',
       items: [
-        { key: 'click_timeout', label: 'Click Timeout', unit: 'ms', desc: 'Timeout for click / focus actions' },
-        { key: 'input_timeout', label: 'Input Timeout', unit: 'ms', desc: 'Timeout for fill / select / check actions' },
-        { key: 'hover_timeout', label: 'Hover Timeout', unit: 'ms', desc: 'Timeout for hover action' },
-        { key: 'scroll_timeout', label: 'Scroll Timeout', unit: 'ms', desc: 'Timeout for scroll-to-element' },
-        { key: 'wait_for_element_timeout', label: 'Wait for Element', unit: 'ms', desc: 'Timeout for wait-for-element-visible' },
+        { key: 'click_timeout', label: 'Click Timeout', unit: 'ms', desc: 'settings.clickTimeoutDesc' },
+        { key: 'input_timeout', label: 'Input Timeout', unit: 'ms', desc: 'settings.inputTimeoutDesc' },
+        { key: 'hover_timeout', label: 'Hover Timeout', unit: 'ms', desc: 'settings.hoverTimeoutDesc' },
+        { key: 'scroll_timeout', label: 'Scroll Timeout', unit: 'ms', desc: 'settings.scrollTimeoutDesc' },
+        { key: 'wait_for_element_timeout', label: 'Wait for Element', unit: 'ms', desc: 'settings.waitElementDesc' },
       ],
     },
     {
-      title: 'Benchmark',
+      title: 'settings.benchmarkGroup',
       items: [
-        { key: 'benchmark_timeout', label: 'Benchmark Nav Timeout', unit: 'ms', desc: 'Timeout for benchmark page navigation' },
-        { key: 'benchmark_idle_wait', label: 'Benchmark Idle Wait', unit: 'ms', desc: 'Wait for network idle in benchmark' },
+        { key: 'benchmark_timeout', label: 'Benchmark Nav Timeout', unit: 'ms', desc: 'settings.benchNavDesc' },
+        { key: 'benchmark_idle_wait', label: 'Benchmark Idle Wait', unit: 'ms', desc: 'settings.benchIdleDesc' },
       ],
     },
   ],
@@ -103,28 +109,29 @@ const SECTION_GROUPS = {
 
 const SECTION_META = {
   general: {
-    title: 'General',
-    desc: 'DOM parsing limits and keyboard/scroll behavior.',
+    title: 'settings.general',
+    desc: 'settings.generalDesc',
   },
   agent: {
-    title: 'Task Agent',
-    desc: 'LLM provider credentials and agent execution parameters for the /agent page.',
+    title: 'settings.agentTab',
+    desc: 'settings.agentDesc',
   },
   timeouts: {
-    title: 'Timeouts',
-    desc: 'Navigation, page load, and interaction timeout values.',
+    title: 'settings.timeouts',
+    desc: 'settings.timeoutsDesc',
   },
   scripts: {
-    title: 'Compressor Scripts',
-    desc: 'Pluggable scripts that filter and simplify raw DOM nodes. Each script defines a process() function. Click a tab to configure.',
+    title: 'settings.scripts',
+    desc: 'settings.scriptsDesc',
   },
   rules: {
-    title: 'URL Matching Rules',
-    desc: 'Platform-level rules override script-level URL_PATTERNS. First match wins. Unmatched URLs use the default compressor.',
+    title: 'settings.urlRules',
+    desc: 'settings.rulesDesc',
   },
 }
 
 export default function SettingsPage() {
+  const { t } = useTranslation()
   const [section, setSection] = useState('general')
 
   // Config state
@@ -203,7 +210,7 @@ export default function SettingsPage() {
   }
 
   const handleReset = async () => {
-    if (!window.confirm('Reset all settings to defaults? This cannot be undone.')) return
+    if (!window.confirm(t('settings.confirmReset'))) return
     setSaving(true)
     try {
       const res = await resetConfig()
@@ -291,11 +298,11 @@ export default function SettingsPage() {
   }
 
   const handleNewScript = async () => {
-    const name = prompt('Script name (lowercase, no spaces):')
+    const name = prompt(t('settings.scriptName'))
     if (!name || !name.trim()) return
     const clean = name.trim().toLowerCase().replace(/[^a-z0-9_]/g, '_')
     if (scripts.find(s => s.name === clean)) {
-      alert(`Script "${clean}" already exists`)
+      alert(t('settings.scriptExists', { name: clean }))
       return
     }
     try {
@@ -333,7 +340,7 @@ export default function SettingsPage() {
     if (!selectedScript || selectedScript === 'default') return
     const s = scripts.find(sc => sc.name === selectedScript)
     if (s?.official) return
-    if (!window.confirm(`Delete script "${selectedScript}"?`)) return
+    if (!window.confirm(t('settings.confirmDelete', { name: selectedScript }))) return
     try {
       await deleteCompressor(selectedScript)
       setRules(prev => prev.filter(r => r.script !== selectedScript))
@@ -368,7 +375,7 @@ export default function SettingsPage() {
       <div className="settings-page">
         <div className="settings-sidebar" />
         <div className="settings-panel">
-          <div className="settings-empty">Loading...</div>
+          <div className="settings-empty">{t('settings.loading')}</div>
         </div>
       </div>
     )
@@ -386,7 +393,7 @@ export default function SettingsPage() {
         <div className="settings-groups">
           {groups.map(group => (
             <div key={group.title} className="settings-group">
-              <h3 className="settings-group-title">{group.title}</h3>
+              <h3 className="settings-group-title">{t(group.title)}</h3>
               <div className="settings-items">
                 {group.items.map(item => {
                   const isOverridden = item.key in overrides
@@ -397,9 +404,9 @@ export default function SettingsPage() {
                       <div className="settings-item-info">
                         <label className="settings-label">
                           {item.label}
-                          {isOverridden && <span className="settings-modified">modified</span>}
+                          {isOverridden && <span className="settings-modified">{t('settings.modified')}</span>}
                         </label>
-                        <span className="settings-desc-text">{item.desc}</span>
+                        <span className="settings-desc-text">{t(item.desc)}</span>
                       </div>
                       <div className="settings-item-input">
                         {isBool ? (
@@ -411,7 +418,7 @@ export default function SettingsPage() {
                             />
                             <span className="settings-toggle-slider" />
                             <span className="settings-toggle-label">
-                              {values[item.key] ? 'On' : 'Off'}
+                              {values[item.key] ? t('settings.on') : t('settings.off')}
                             </span>
                           </label>
                         ) : item.type === 'text' || item.type === 'password' ? (
@@ -436,7 +443,7 @@ export default function SettingsPage() {
                               title="Reset to default"
                               onClick={() => handleChange(item.key, defaultVal)}
                             >
-                              default: {defaultVal}
+                              {t('settings.default')}: {defaultVal}
                             </span>
                           </>
                         )}
@@ -450,10 +457,10 @@ export default function SettingsPage() {
         </div>
         <div className="settings-actions">
           <button className="settings-save" onClick={handleSave} disabled={saving}>
-            {saving ? 'Saving...' : saved ? 'Saved' : 'Save Changes'}
+            {saving ? t('settings.saving') : saved ? t('settings.saved') : t('settings.saveChanges')}
           </button>
           <button className="settings-reset" onClick={handleReset} disabled={saving}>
-            Reset All to Defaults
+            {t('settings.resetAll')}
           </button>
         </div>
       </>
@@ -471,7 +478,7 @@ export default function SettingsPage() {
         {/* ── Left: script list ── */}
         <div className="scripts-list">
           <div className="scripts-list-header">
-            <span className="scripts-list-title">Scripts</span>
+            <span className="scripts-list-title">{t('settings.scripts')}</span>
             <button className="scripts-list-add" onClick={handleNewScript} title="New script">+</button>
           </div>
           <div className="scripts-list-items">
@@ -485,9 +492,9 @@ export default function SettingsPage() {
                   onClick={() => selectScript(s.name)}
                 >
                   <span className="scripts-list-item-name">{s.name}</span>
-                  {s.builtin && <span className="scripts-list-item-badge">core</span>}
-                  {s.official && !s.builtin && <span className="scripts-list-item-badge">official</span>}
-                  {!s.builtin && !s.official && <span className="scripts-list-item-badge scripts-list-item-badge-custom">custom</span>}
+                  {s.builtin && <span className="scripts-list-item-badge">{t('settings.core')}</span>}
+                  {s.official && !s.builtin && <span className="scripts-list-item-badge">{t('settings.official')}</span>}
+                  {!s.builtin && !s.official && <span className="scripts-list-item-badge scripts-list-item-badge-custom">{t('settings.custom')}</span>}
                 </button>
               )
             })}
@@ -525,7 +532,7 @@ export default function SettingsPage() {
                       />
                       <span className="settings-toggle-slider" />
                       <span className="settings-toggle-label">
-                        {enabled ? 'On' : 'Off'}
+                        {enabled ? t('settings.on') : t('settings.off')}
                       </span>
                     </label>
                   </div>
@@ -539,19 +546,19 @@ export default function SettingsPage() {
                     className={`script-subtab ${scriptSubTab === 'settings' ? 'script-subtab-active' : ''}`}
                     onClick={() => setScriptSubTab('settings')}
                   >
-                    Settings
+                    {t('settings.settingsTab')}
                   </button>
                 )}
                 <button
                   className={`script-subtab ${scriptSubTab === 'source' ? 'script-subtab-active' : ''}`}
                   onClick={() => setScriptSubTab('source')}
                 >
-                  Source Code
+                  {t('settings.sourceCode')}
                   {isCustom && codeModified && <span className="script-subtab-dot" />}
                 </button>
                 {isCustom && (
                   <button className="script-subtab script-subtab-danger" onClick={handleDeleteScript}>
-                    Delete
+                    {t('settings.delete')}
                   </button>
                 )}
               </div>
@@ -571,7 +578,7 @@ export default function SettingsPage() {
                             <div className="settings-item-info">
                               <label className="settings-label">
                                 {item.label}
-                                {isOverridden && <span className="settings-modified">modified</span>}
+                                {isOverridden && <span className="settings-modified">{t('settings.modified')}</span>}
                               </label>
                               <span className="settings-desc-text">{item.desc}</span>
                             </div>
@@ -585,7 +592,7 @@ export default function SettingsPage() {
                                   />
                                   <span className="settings-toggle-slider" />
                                   <span className="settings-toggle-label">
-                                    {val ? 'On' : 'Off'}
+                                    {val ? t('settings.on') : t('settings.off')}
                                   </span>
                                 </label>
                               ) : (
@@ -601,7 +608,7 @@ export default function SettingsPage() {
                                     title="Reset to default"
                                     onClick={() => resetScriptSetting(currentScript.name, item.key)}
                                   >
-                                    default: {item.default}
+                                    {t('settings.default')}: {item.default}
                                   </span>
                                 </>
                               )}
@@ -630,7 +637,7 @@ export default function SettingsPage() {
                           onClick={handleSaveScript}
                           disabled={scriptSaving || !codeModified}
                         >
-                          {scriptSaving ? 'Saving...' : 'Save Script'}
+                          {scriptSaving ? t('settings.savingScript') : t('settings.saveScript')}
                         </button>
                       </div>
                     )}
@@ -639,7 +646,7 @@ export default function SettingsPage() {
               </div>
             </>
           ) : (
-            <div className="scripts-detail-empty">Select a script to view its configuration.</div>
+            <div className="scripts-detail-empty">{t('settings.selectScript')}</div>
           )}
         </div>
       </div>
@@ -656,13 +663,13 @@ export default function SettingsPage() {
       {/* Tier 1: Platform-level rules */}
       <div className="rules-section">
         <div className="settings-group">
-          <h3 className="settings-group-title">Platform Rules (Priority 1)</h3>
+          <h3 className="settings-group-title">{t('settings.platformRules')}</h3>
           <div style={{ padding: '12px 16px' }}>
             <table className="rules-table">
               <thead>
                 <tr>
-                  <th>URL Pattern</th>
-                  <th>Script</th>
+                  <th>{t('settings.urlPattern')}</th>
+                  <th>{t('settings.script')}</th>
                   <th></th>
                 </tr>
               </thead>
@@ -684,7 +691,7 @@ export default function SettingsPage() {
                         value={rule.script}
                         onChange={e => updateRule(i, 'script', e.target.value)}
                       >
-                        <option value="">-- select --</option>
+                        <option value="">{t('settings.selectPlaceholder')}</option>
                         {scripts.filter(s => !s.builtin).map(s => (
                           <option key={s.name} value={s.name}>{s.name}</option>
                         ))}
@@ -697,7 +704,7 @@ export default function SettingsPage() {
                 ))}
               </tbody>
             </table>
-            <button className="rule-add" onClick={addRule}>+ Add Rule</button>
+            <button className="rule-add" onClick={addRule}>{t('settings.addRule')}</button>
           </div>
         </div>
       </div>
@@ -705,14 +712,14 @@ export default function SettingsPage() {
       {/* Tier 2: Script-level URL_PATTERNS (read-only) */}
       <div className="rules-section">
         <div className="settings-group">
-          <h3 className="settings-group-title">Script-Bundled Rules (Priority 2)</h3>
+          <h3 className="settings-group-title">{t('settings.scriptRules')}</h3>
           <div style={{ padding: '12px 16px' }}>
             {scriptLevelRules.length > 0 ? (
               <table className="rules-table">
                 <thead>
                   <tr>
-                    <th>URL Pattern</th>
-                    <th>Script</th>
+                    <th>{t('settings.urlPattern')}</th>
+                    <th>{t('settings.script')}</th>
                     <th></th>
                   </tr>
                 </thead>
@@ -727,8 +734,8 @@ export default function SettingsPage() {
                       </td>
                       <td>
                         {rule.enabled
-                          ? <span className="rule-source-badge">active</span>
-                          : <span className="rule-source-badge rule-source-badge-off">off</span>
+                          ? <span className="rule-source-badge">{t('settings.active')}</span>
+                          : <span className="rule-source-badge rule-source-badge-off">{t('settings.off')}</span>
                         }
                       </td>
                     </tr>
@@ -736,20 +743,20 @@ export default function SettingsPage() {
                 </tbody>
               </table>
             ) : (
-              <div className="rules-empty">No scripts have declared URL_PATTERNS yet.</div>
+              <div className="rules-empty">{t('settings.noPatterns')}</div>
             )}
             <div className="rules-hint">
-              Toggle scripts in the Scripts tab. Edit URL_PATTERNS in the script source code to add custom rules.
+              {t('settings.rulesHint')}
             </div>
           </div>
         </div>
       </div>
 
-      <div className="rules-fallback">Fallback: URLs not matching any rule use the default compressor.</div>
+      <div className="rules-fallback">{t('settings.rulesFallback')}</div>
 
       <div className="settings-actions">
         <button className="settings-save" onClick={handleSave} disabled={saving}>
-          {saving ? 'Saving...' : saved ? 'Saved' : 'Save Rules'}
+          {saving ? t('settings.saving') : saved ? t('settings.saved') : t('settings.saveRules')}
         </button>
       </div>
     </>
@@ -759,7 +766,7 @@ export default function SettingsPage() {
     <div className="settings-page">
       {/* ── Sidebar ── */}
       <aside className="settings-sidebar">
-        <h4 className="settings-sidebar-title">Settings</h4>
+        <h4 className="settings-sidebar-title">{t('settings.title')}</h4>
         <nav className="settings-nav">
           {SECTIONS.map(s => (
             <button
@@ -768,7 +775,7 @@ export default function SettingsPage() {
               onClick={() => setSection(s.key)}
             >
               <span className="settings-nav-icon">{s.icon}</span>
-              {s.label}
+              {t(s.label)}
             </button>
           ))}
         </nav>
@@ -777,8 +784,8 @@ export default function SettingsPage() {
       {/* ── Panel ── */}
       <div className={`settings-panel ${section === 'scripts' ? 'settings-panel-wide' : ''}`}>
         <div className="settings-panel-header">
-          <h1 className="settings-panel-title">{meta.title}</h1>
-          <p className="settings-panel-desc">{meta.desc}</p>
+          <h1 className="settings-panel-title">{t(meta.title)}</h1>
+          <p className="settings-panel-desc">{t(meta.desc)}</p>
         </div>
 
         {section === 'general' && renderConfigSection('general')}

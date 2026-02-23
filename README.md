@@ -44,8 +44,35 @@ While stripping away:
 
 - Python 3.10+
 - Node.js 18+
+- Git
 
-### One Command
+### 1. Download
+
+```bash
+git clone https://github.com/CodingLucasLi/Clawome.git
+cd Clawome
+```
+
+### 2. Environment Configuration
+
+Copy the example environment file and fill in your LLM credentials (required for Task Agent):
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env`:
+
+```bash
+# LLM Provider (required for Task Agent)
+LLM_API_KEY=sk-your-api-key-here
+LLM_API_BASE=https://dashscope.aliyuncs.com/compatible-mode/v1
+LLM_MODEL=qwen3.5-plus
+```
+
+> **Note:** The `.env` file is optional if you only use the REST API / DOM compression. You can also configure LLM credentials later via the Settings page.
+
+### 3. One-Command Start
 
 ```bash
 ./start.sh
@@ -53,9 +80,14 @@ While stripping away:
 # API:        http://localhost:5001
 ```
 
-This will automatically set up Python venv, install dependencies, download Chromium, and start both backend and frontend.
+`start.sh` will automatically:
+- Create a Python virtual environment
+- Install all backend & frontend dependencies
+- Download Chromium via Playwright
+- Load `.env` configuration
+- Start both backend and frontend servers
 
-### Manual Setup
+### Manual Setup (Alternative)
 
 ```bash
 # Backend

@@ -3,6 +3,11 @@ Centralized configuration for Browser3.
 
 All hardcoded constants extracted here with sensible defaults.
 Values can be changed at runtime via /api/config endpoint.
+
+Priority order (highest wins):
+  1. Persisted overrides (.browser_config.json, set via Settings UI)
+  2. Environment variables (from .env or shell)
+  3. Defaults (DEFAULTS dict below)
 """
 
 import json
@@ -11,6 +16,18 @@ import threading
 
 _CONFIG_FILE = os.path.join(os.path.dirname(__file__), ".browser_config.json")
 _lock = threading.Lock()
+
+# Mapping: config key → environment variable name
+# Only keys listed here can be loaded from environment.
+_ENV_MAP = {
+    "llm_api_key":      "LLM_API_KEY",
+    "llm_api_base":     "LLM_API_BASE",
+    "llm_model":        "LLM_MODEL",
+    "llm_temperature":  "LLM_TEMPERATURE",
+    "llm_max_tokens":   "LLM_MAX_TOKENS",
+    "agent_max_steps":  "AGENT_MAX_STEPS",
+    "agent_start_url":  "AGENT_START_URL",
+}
 
 # ── Default values ──
 
@@ -117,6 +134,11 @@ DEFAULTS = {
 
     # Browser
     "headless": False,
+    "screen_refresh_interval": 3000,    # 页面截图刷新间隔 (ms)
+    "browser_window_x": 960,            # 浏览器窗口 X 坐标 (0=关闭定位)
+    "browser_window_y": 0,              # 浏览器窗口 Y 坐标
+    "browser_window_width": 960,        # 浏览器窗口宽度
+    "browser_window_height": 1080,      # 浏览器窗口高度
 
     # Benchmark
     "benchmark_timeout": 30000,
@@ -185,18 +207,49 @@ def _save():
 _load()
 
 
+def _coerce(key: str, value):
+    """Coerce value to match the type of DEFAULTS[key]."""
+    if key not in DEFAULTS:
+        return value
+    default_type = type(DEFAULTS[key])
+    try:
+        if default_type == bool:
+            if isinstance(value, str):
+                return value.lower() in ("1", "true", "yes")
+            return bool(value)
+        elif default_type == int:
+            return int(value)
+        elif default_type == float:
+            return float(value)
+    except (ValueError, TypeError):
+        pass
+    return value
+
+
 def get(key: str):
-    """Get config value — user override if set, otherwise default."""
+    """Get config value — persisted override > env var > default."""
     with _lock:
         if key in _config:
             return _config[key]
+        # Check environment variable
+        env_name = _ENV_MAP.get(key)
+        if env_name:
+            env_val = os.environ.get(env_name)
+            if env_val is not None and env_val != "":
+                return _coerce(key, env_val)
         return DEFAULTS.get(key)
 
 
 def get_all() -> dict:
-    """Get merged config (defaults + overrides)."""
+    """Get merged config (defaults + env vars + overrides)."""
     with _lock:
         merged = dict(DEFAULTS)
+        # Layer 2: environment variables
+        for key, env_name in _ENV_MAP.items():
+            env_val = os.environ.get(env_name)
+            if env_val is not None and env_val != "":
+                merged[key] = _coerce(key, env_val)
+        # Layer 3: persisted overrides (highest priority)
         merged.update(_config)
         return merged
 

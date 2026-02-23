@@ -8,6 +8,14 @@ ROOT="$(cd "$(dirname "$0")" && pwd)"
 echo "🦞 Starting Clawome..."
 echo ""
 
+# ── Load .env if present ──
+if [ -f "$ROOT/.env" ]; then
+  echo "[env] Loading .env"
+  set -a
+  source "$ROOT/.env"
+  set +a
+fi
+
 # ── Backend setup ──
 cd "$ROOT/backend"
 
