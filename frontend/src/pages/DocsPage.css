@@ -33,12 +33,23 @@
 }
 
 .docs-nav-group-label {
+  display: block;
+  width: 100%;
+  border: none;
+  background: transparent;
+  text-align: left;
   font-size: 10px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.8px;
   color: #94a3b8;
   padding: 4px 20px 4px;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.docs-nav-group-label:hover {
+  color: #64748b;
 }
 
 .docs-nav-item {

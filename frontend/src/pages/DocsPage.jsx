@@ -1,17 +1,21 @@
 import { useState, useEffect, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { categories, docs } from '../data/apiDocs'
+import { categories, docs as docsEn } from '../data/apiDocs'
+import { docs as docsZh } from '../data/apiDocsZh'
 import './DocsPage.css'
 
 // Group categories for sidebar navigation
 const navGroups = [
   { label: null, ids: ['overview', 'skill-docs', 'quickstart'] },
-  { label: 'Customization', ids: ['compressors', 'configuration'] },
-  { label: 'Browser APIs', ids: ['navigation', 'dom-reading', 'interaction', 'scrolling', 'keyboard', 'tabs', 'screenshot', 'file-download', 'page-state', 'control'] },
+  { labelKey: 'docs.customization', ids: ['compressors', 'configuration'] },
+  { labelKey: 'docs.browserApis', ids: ['navigation', 'dom-reading', 'interaction', 'scrolling', 'keyboard', 'tabs', 'screenshot', 'file-download', 'page-state', 'control'] },
 ]
 
 export default function DocsPage() {
+  const { t, i18n } = useTranslation()
+  const docs = i18n.language === 'zh' ? docsZh : docsEn
   const [activeSection, setActiveSection] = useState('overview')
   const contentRef = useRef(null)
   const sectionRefs = useRef({})
@@ -64,7 +68,14 @@ export default function DocsPage() {
         <nav className="docs-nav">
           {navGroups.map((group, gi) => (
             <div key={gi} className="docs-nav-group">
-              {group.label && <div className="docs-nav-group-label">{group.label}</div>}
+              {group.labelKey && (
+                <button
+                  className="docs-nav-group-label"
+                  onClick={() => scrollToSection(group.ids[0])}
+                >
+                  {t(group.labelKey)}
+                </button>
+              )}
               {group.ids.map(id => {
                 const cat = catMap[id]
                 if (!cat) return null
@@ -74,7 +85,7 @@ export default function DocsPage() {
                     className={`docs-nav-item ${activeSection === cat.id ? 'active' : ''}`}
                     onClick={() => scrollToSection(cat.id)}
                   >
-                    {cat.label}
+                    {t(cat.labelKey)}
                   </button>
                 )
               })}
@@ -87,9 +98,9 @@ export default function DocsPage() {
             download
             className="docs-download"
           >
-            Download api-reference.md
+            {t('docs.download')}
           </a>
-          <span className="docs-download-hint">For LLM agents</span>
+          <span className="docs-download-hint">{t('docs.forLlm')}</span>
         </div>
       </aside>
 
