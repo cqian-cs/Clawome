@@ -47,7 +47,6 @@ class AgentSettings:
     start_url: str = field(default_factory=lambda: _cfg("agent_start_url", "https://www.baidu.com"))
     supervisor_interval: int = 5       # Step-level anomaly check every N steps
     global_check_interval: int = 20    # Task-level progress check every N steps
-    agent_version: str = field(default_factory=lambda: _cfg("agent_version", "v2"))
 
 
 @dataclass

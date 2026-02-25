@@ -523,7 +523,7 @@ class BrowserManager:
                 # clear _new_pages since the initial page isn't a "new tab"
                 self._new_pages.clear()
             if url:
-                if not url.startswith(("http://", "https://")):
+                if not url.startswith(("http://", "https://", "about:", "data:", "chrome:")):
                     url = "https://" + url
                 self._page.goto(url, wait_until="domcontentloaded", timeout=cfg.get("nav_timeout"))
                 return self._action_result(f"Opened {url}", refresh_dom=refresh_dom, fields=fields)
@@ -852,7 +852,7 @@ class BrowserManager:
                 self._new_pages.remove(new_page)
             self._page = new_page
             if url:
-                if not url.startswith(("http://", "https://")):
+                if not url.startswith(("http://", "https://", "about:", "data:", "chrome:")):
                     url = "https://" + url
                 self._page.goto(url, wait_until="domcontentloaded", timeout=cfg.get("nav_timeout"))
             return self._action_result(f"New tab: {url or 'blank'}", refresh_dom=refresh_dom, fields=fields)
@@ -949,11 +949,12 @@ class BrowserManager:
     # 37  Browser Control
     # ==================================================================
 
-    def close(self):                                                # 37
+    def close(self, save_session=True):                               # 37
         with self._lock:
             if not self._browser:
                 return {"status": "error", "message": "Browser is not open"}
-            self._save_session()
+            if save_session:
+                self._save_session()
             try:
                 self._browser.close()
             except Exception:

@@ -7,20 +7,17 @@ Responsibilities:
   4. Sync tab state
   5. Record page visit in memory
 
-Key v2 design:
-  - When sense_result passes dom_changed signal with cached DOM, skip re-fetching
-  - When sense detects no_change, force full DOM for richer context
+LLM call: None.
 """
 
 import asyncio
 
 from browser import api as browser_api
-from v2.models.schemas import AgentState
+from v3.models.schemas import AgentState
 from shared.browser_actions import wait_for_stable_dom
 import run_context
 
 
-# Keywords that indicate an information-extraction subtask (use full DOM)
 _EXTRACT_KEYWORDS = (
     "extract", "retrieve", "find", "identify", "read",
     "scrape", "crawl", "summarize", "information",
@@ -28,7 +25,7 @@ _EXTRACT_KEYWORDS = (
 
 
 async def perceive_node(state: AgentState) -> dict:
-    """Read current page DOM + tabs, preparing context for plan_step."""
+    """Read current page DOM + tabs, preparing context for step_planner."""
     if run_context.is_cancelled():
         raise asyncio.CancelledError("Task cancelled by user")
 
@@ -41,12 +38,10 @@ async def perceive_node(state: AgentState) -> dict:
     goal = subtask.goal if subtask else state.task.description
     use_lite = not any(kw in goal for kw in _EXTRACT_KEYWORDS)
 
-    # Force full DOM on no_change signal (action may not have taken effect)
     if sense_signal == "no_change":
         use_lite = False
         print(f"  [perceive step {step_num}] no_change signal → full DOM")
 
-    # Stuck detection: last 2 actions repeated or errored → full DOM
     if use_lite and len(br.logs) >= 2:
         recent = br.logs[-2:]
         actions_same = recent[0].action == recent[1].action
@@ -56,7 +51,6 @@ async def perceive_node(state: AgentState) -> dict:
             print(f"  [perceive step {step_num}] Stuck/error → full DOM")
 
     # ── 2. Fetch DOM ───────────────────────────────────────────
-    # If sense passed us a cached DOM (dom_changed), reuse it
     if sense_signal == "dom_changed" and state.current_dom:
         dom = state.current_dom
         print(f"  [perceive step {step_num}] Reusing sense DOM ({len(dom)} chars)")
@@ -77,8 +71,12 @@ async def perceive_node(state: AgentState) -> dict:
     dom = await wait_for_stable_dom(dom, use_lite, step_num)
 
     # ── 4. Sync tab state ──────────────────────────────────────
-    raw_tabs = await browser_api.get_tabs()
-    br.update_tabs(raw_tabs, dom=dom)
+    try:
+        raw_tabs = await browser_api.get_tabs()
+        br.update_tabs(raw_tabs, dom=dom)
+    except Exception as e:
+        print(f"  [perceive step {step_num}] get_tabs failed: {e}, using DOM only")
+        br.update_dom(dom)
     print(f"\n  [perceive step {step_num}] DOM({'lite' if use_lite else 'full'}): "
           f"{len(dom)} chars, URL: {br.current_url}")
 
@@ -91,6 +89,5 @@ async def perceive_node(state: AgentState) -> dict:
         "browser": br,
         "memory": memory,
         "current_dom": dom,
-        # Reset sense_signal after consuming it
         "sense_signal": "new_context",
     }

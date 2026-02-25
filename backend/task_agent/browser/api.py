@@ -38,10 +38,14 @@ def _check_response(resp: httpx.Response):
 # ─── Lifecycle ────────────────────────────────────────────────
 
 
-async def close_browser() -> dict:
-    """Close the browser (release Playwright resources). Next open_browser will restart."""
+async def close_browser(*, save_session: bool = True) -> dict:
+    """Close the browser (release Playwright resources). Next open_browser will restart.
+
+    save_session=False skips writing .browser_session.json, so the next
+    open_browser() won't restore historical tabs.
+    """
     async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
-        resp = await client.post(f"{BASE_URL}/close")
+        resp = await client.post(f"{BASE_URL}/close", json={"save_session": save_session})
         resp.raise_for_status()
         return resp.json()
 

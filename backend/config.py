@@ -178,8 +178,8 @@ DEFAULTS = {
     "agent_max_steps": 15,
     # Start URL for browser agent
     "agent_start_url": "https://www.baidu.com",
-    # Agent workflow version: "v1" (flat 10-node) or "v2" (dual-dimension)
-    "agent_version": "v2",
+    # Agent workflow version: "v2" (dual-dimension) or "v3" (agent/nodes/workflows)
+    "agent_version": "v3",
 }
 
 # ── Runtime state ──

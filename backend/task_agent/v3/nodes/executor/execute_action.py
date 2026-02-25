@@ -4,7 +4,7 @@ Responsibilities:
   1. Handle "done" action → complete subtask, exit
   2. Dispatch action via shared browser_actions
   3. On failure, retry with fresh DOM + re-ask LLM (up to max_retries)
-  4. Pass the post-action DOM to sense_result (not discarded!)
+  4. Pass the post-action DOM to sense_result
 
 LLM call: Only on retries (re-decision with refreshed DOM).
 """
@@ -17,7 +17,7 @@ from langchain_core.messages import SystemMessage, HumanMessage
 
 from llm import get_llm
 from browser import api as browser_api
-from v2.models.schemas import AgentState
+from v3.models.schemas import AgentState
 from agent_config import settings
 from utils import extract_json, tlog
 import run_context
@@ -26,7 +26,6 @@ from shared.browser_actions import dispatch_action
 from shared.result_helpers import detect_default_search_engine
 
 
-# Retry prompt — injected when an action fails and DOM is refreshed
 RETRY_CONTEXT = """\
 [Action failed, DOM refreshed]
 Your last action failed:
@@ -70,15 +69,13 @@ async def execute_action_node(state: AgentState) -> dict:
             "action_count": new_action_count,
             "global_step_count": new_global_step,
             "messages": state.messages,
-            # Signal for sense: done
             "current_dom": "",
         }
 
     # ── 2. Execute with retries ────────────────────────────────
-    max_retries = settings.agent.max_retries  # 3
+    max_retries = settings.agent.max_retries
     retry_action = action
 
-    # Determine lite mode for potential re-fetches
     goal = subtask.goal if subtask else task.description
     _EXTRACT_KEYWORDS = ("extract", "retrieve", "find", "identify", "read", "scrape", "crawl", "summarize", "information")
     use_lite = not any(kw in goal for kw in _EXTRACT_KEYWORDS)
@@ -93,7 +90,6 @@ async def execute_action_node(state: AgentState) -> dict:
         if api_resp.get("status") != "error" or attempt >= max_retries:
             break
 
-        # Skip retries for connection-level errors
         error_msg = api_resp.get("message", "")
         if any(kw in error_msg.lower() for kw in ("connection", "dns", "timeout", "refused", "unreachable", "net::")):
             print(f"  [exec step {step_num}] Connection error, skipping retries: {error_msg[:80]}")
@@ -103,12 +99,12 @@ async def execute_action_node(state: AgentState) -> dict:
         # Re-fetch DOM for retry
         try:
             retry_dom = await browser_api.get_dom(lite=use_lite)
-        except Exception:
+            retry_tabs = await browser_api.get_tabs()
+            br.update_tabs(retry_tabs, dom=retry_dom)
+        except Exception as e:
+            print(f"  [exec step {step_num}] Failed to refresh DOM/tabs for retry: {e}")
             break
-        retry_tabs = await browser_api.get_tabs()
-        br.update_tabs(retry_tabs, dom=retry_dom)
 
-        # Build retry prompt
         failed_action_str = json.dumps(retry_action, ensure_ascii=False)
         retry_block = RETRY_CONTEXT.format(
             failed_action=failed_action_str,
@@ -117,8 +113,8 @@ async def execute_action_node(state: AgentState) -> dict:
             max_retries=max_retries,
         )
 
-        # Rebuild system prompt for retry LLM call
-        from v2.nodes.exec_plan_step import EXECUTOR_SYSTEM, BROWSER_CONTEXT
+        # Import prompts from step_planner
+        from v3.agent.step_planner import EXECUTOR_SYSTEM, BROWSER_CONTEXT
         system_content = EXECUTOR_SYSTEM.format(
             task=task.description,
             step=subtask.step,
@@ -185,14 +181,15 @@ async def execute_action_node(state: AgentState) -> dict:
         }
 
     # ── 3. Capture post-action state ──────────────────────────
-    # The API response contains the new DOM — pass it to sense_result
     new_dom = api_resp.get("dom", "")
-
-    # Log the action result
     api_status = api_resp.get("status", "ok")
     api_msg = api_resp.get("message", "")
 
-    # Sync to task.steps
+    # Save get_text results to memory so agent_decision has full data
+    if retry_action.get("action") == "get_text" and api_status == "ok" and api_msg:
+        memory.add_finding(f"[get_text] {api_msg[:500]}")
+        print(f"  [exec step {step_num}] Saved get_text result to memory.findings")
+
     summary = f"{json.dumps(retry_action, ensure_ascii=False)} -> {api_msg}"
     task.add_step(retry_action, summary)
     task.save()
@@ -206,7 +203,6 @@ async def execute_action_node(state: AgentState) -> dict:
         "action_count": new_action_count,
         "global_step_count": new_global_step,
         "messages": state.messages,
-        # Pass post-action DOM + tab snapshot for sense_result
         "current_dom": new_dom,
         "before_tab_ids": list(before_tab_ids),
         "before_url": before_url,

@@ -1,15 +1,13 @@
 """page_doctor node — Page obstacle detection and removal.
 
-Handles common interfering elements on browser pages:
-  - Cookie consent banners
-  - Top notification / promotional banners
-  - Popups / modal overlays
-  - Page load failures / server errors
-  - Other UI elements that obstruct target content
+Handles common interfering elements: cookie banners, popups, CAPTCHA,
+server errors, etc.  Rule-based keyword scan first, LLM diagnosis only
+when suspicious signals are found.
 
-Single-node design: LLM analyses DOM -> outputs action list -> executes one by one -> returns to main flow.
+LLM call: Conditional (only when obstacle keywords detected).
 """
 
+import asyncio
 import json
 import time
 
@@ -17,10 +15,10 @@ from langchain_core.messages import SystemMessage, HumanMessage
 
 from llm import get_llm
 from browser import api as browser_api
-from models.schemas import AgentState
+from v3.models.schemas import AgentState
 from utils import extract_json, tlog
+import run_context
 
-# --- Prompt -------------------------------------------------------
 
 PAGE_DOCTOR_SYSTEM = """\
 You are a browser page diagnostic expert. The current page may contain interfering elements or anomalies. You need to analyse the DOM and provide fix actions.
@@ -39,11 +37,11 @@ You are a browser page diagnostic expert. The current page may contain interferi
 5. Page load failures — very little DOM content or error messages displayed, may need refresh (goto current URL)
 6. Server errors (403/404/500/503) — title or content contains error codes, may need to go back or try a different path
 7. Login walls / paywalls — need to bypass or navigate to a different page for information
-8. Anti-bot / CAPTCHA / robot verification pages — search engines (especially Google) may block automated browsers. If this happens, switch to an alternative search engine with the same query. Extract the search query from the current URL (e.g., the "q=" parameter) and construct a new search URL:
+8. Anti-bot / CAPTCHA / robot verification pages — switch to an alternative search engine with the same query.
    - If blocked on Google → use Baidu: https://www.baidu.com/s?wd=QUERY
    - If blocked on Baidu → use Bing: https://www.bing.com/search?q=QUERY
    - If blocked on Bing → use Baidu: https://www.baidu.com/s?wd=QUERY
-9. Search engine homepage landing — if the page is a search engine homepage (e.g., baidu.com, bing.com, google.com) with no search results, this is NOT an issue. Return has_issues: false. The executor will use goto to navigate to the search URL directly.
+9. Search engine homepage landing — if the page is a search engine homepage with no search results, this is NOT an issue. Return has_issues: false.
 
 [Current Browser State]
 - URL: {url}
@@ -66,15 +64,13 @@ Supported actions:
 
 Rules:
 - Only return JSON
-- Sort the actions list by execution priority (handle the most impactful obstacles first)
+- Sort the actions list by execution priority
 - Do not touch normal page content, only handle interfering elements
-- If the page is normal (no popups, no banners, no errors), return has_issues: false directly
-- For anti-bot/CAPTCHA pages: always use goto to switch to an alternative search engine rather than trying to solve the CAPTCHA
+- For anti-bot/CAPTCHA pages: always use goto to switch to an alternative search engine
 - Return at most 3 actions
 
 [Response Language]
 You MUST respond in {language}."""
-
 
 
 async def _exec_fix(action: dict) -> dict:
@@ -86,7 +82,6 @@ async def _exec_fix(action: dict) -> dict:
         if action_type == "goto":
             return await browser_api.open_browser(action.get("url"))
         if action_type == "wait":
-            import asyncio
             await asyncio.sleep(action.get("seconds", 1))
             dom = await browser_api.get_dom()
             return {"status": "ok", "dom": dom, "message": f"Waited {action.get('seconds', 1)} seconds"}
@@ -96,8 +91,6 @@ async def _exec_fix(action: dict) -> dict:
     return {"status": "ok", "message": f"Unknown action {action_type}"}
 
 
-# --- Rule-based pre-detection -------------------------------------
-
 _OBSTACLE_KEYWORDS = [
     "cookie", "consent", "accept all", "accept cookies", "i agree",
     "gdpr", "privacy policy",
@@ -106,32 +99,30 @@ _OBSTACLE_KEYWORDS = [
     "subscribe", "newsletter",
     "403", "404", "500", "503",
     "access denied", "forbidden", "not found",
-    # Anti-bot / CAPTCHA detection
     "captcha", "recaptcha", "robot", "unusual traffic", "automated queries",
     "verify you are human", "are you a robot", "bot detection",
     "sorry/index", "please verify", "verification required",
     "人机验证", "验证码", "安全验证", "异常流量", "百度安全验证",
-    # Chinese equivalents for i18n coverage: "agree", "accept", "privacy"
     "同意", "接受", "隐私",
 ]
 
 
 def _has_obstacle_signals(dom: str, title: str) -> bool:
-    """Quick keyword scan to determine if the page may contain obstacles. Does not call the LLM."""
+    """Quick keyword scan for page obstacles."""
     text = (dom + " " + title).lower()
     return any(kw in text for kw in _OBSTACLE_KEYWORDS)
 
 
-# --- Node ---------------------------------------------------------
-
 async def page_doctor_node(state: AgentState) -> dict:
     """Detect and remove page obstacles, return the cleaned browser state."""
+    if run_context.is_cancelled():
+        raise asyncio.CancelledError("Task cancelled by user")
+
     br = state.browser
     task = state.task
     subtask = task.get_current_subtask()
     goal = subtask.goal if subtask else task.description
 
-    # Skip re-checking if the URL has not changed
     if br.current_url and br.current_url == state.last_doctor_url:
         print(f"  [page_doctor] URL unchanged ({br.current_url[:60]}...), skipping check")
         return {
@@ -139,7 +130,6 @@ async def page_doctor_node(state: AgentState) -> dict:
             "page_doctor_count": state.page_doctor_count + 1,
         }
 
-    # First use lite DOM for keyword pre-screening (saves tokens)
     dom_lite = await browser_api.get_dom(lite=True)
     raw_tabs = await browser_api.get_tabs()
     br.update_tabs(raw_tabs, dom=dom_lite)
@@ -152,12 +142,10 @@ async def page_doctor_node(state: AgentState) -> dict:
             "last_doctor_url": br.current_url or "",
         }
 
-    # Suspicious signals found -> use full DOM for precise LLM diagnosis
     print("  [page_doctor] Obstacle keywords detected, starting LLM diagnosis...")
     dom = await browser_api.get_dom(lite=False)
     br.update_dom(dom)
 
-    # Last 3 log entries
     recent_logs = br.get_logs_summary(n=3)
 
     prompt = PAGE_DOCTOR_SYSTEM.format(
@@ -196,7 +184,6 @@ async def page_doctor_node(state: AgentState) -> dict:
         print("  [page_doctor] Page is normal, no action needed")
         return {"browser": br, "llm_usage": state.llm_usage, "page_doctor_count": new_count, "last_doctor_url": br.current_url or "", "messages": [response]}
 
-    # Execute fix actions one by one
     actions = data.get("actions", [])
     fixed_count = 0
     for i, fix_action in enumerate(actions):
@@ -219,7 +206,6 @@ async def page_doctor_node(state: AgentState) -> dict:
             print(f"  [page_doctor] Fix failed: {msg}, skipping remaining actions")
             break
 
-    # Update DOM
     new_dom = await browser_api.get_dom(lite=True)
     new_tabs = await browser_api.get_tabs()
     br.update_tabs(new_tabs, dom=new_dom)

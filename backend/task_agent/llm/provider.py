@@ -58,6 +58,7 @@ def get_llm(
         model=litellm_model,
         temperature=temperature if temperature is not None else settings.llm.temperature,
         max_tokens=settings.llm.max_tokens,
+        timeout=60,           # 60s hard timeout — prevents 166s hangs
     )
 
     # API key

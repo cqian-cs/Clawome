@@ -523,8 +523,10 @@ def api_wait_for():
 
 @app.route("/api/browser/close", methods=["POST"])
 def api_close():
+    body = _body()
+    save_session = body.get("save_session", True)
     try:
-        return jsonify(manager.close())
+        return jsonify(manager.close(save_session=save_session))
     except Exception as e:
         return _err(str(e))
 

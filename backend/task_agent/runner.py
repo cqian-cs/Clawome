@@ -168,11 +168,10 @@ def start_task(description):
         _running = True
         _start_time = time.time()
         run_context.reset_cancelled()  # Clear cancellation flag from previous run
-        from agent_config.settings import settings as _s
         _current_status = {
             "task_id": _current_task_id,
             "task": description,
-            "version": _s.agent.agent_version,
+            "version": "v3",
             "status": "starting",
             "subtasks": [],
             "steps": [],
@@ -352,8 +351,7 @@ async def _run_workflow(description):
     from agent_config.settings import reload_settings, settings
     reload_settings()
 
-    version = settings.agent.agent_version
-    print(f"  [task_agent] Running workflow version: {version}")
+    print(f"  [task_agent] Running v3 workflow")
 
     run_context.init()
     from utils.workflow_trace import reset as _reset_trace
@@ -364,12 +362,8 @@ async def _run_workflow(description):
     task.status = "running"
     task.save()  # Write initial state so frontend can start tracking
 
-    if version == "v2":
-        from v2.models.schemas import AgentState
-        from v2.workflows import build_main_workflow
-    else:
-        from models.schemas import AgentState
-        from workflows.main_workflow import build_main_workflow
+    from v3.models.schemas import AgentState
+    from v3.workflows import build_main_workflow
 
     state = AgentState(task=task)
     workflow = build_main_workflow()

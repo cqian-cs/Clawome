@@ -1,10 +1,8 @@
-"""plan_step node — LLM decides the next browser action.
+"""step_planner — LLM decides the next browser action.
 
-Responsibilities:
-  1. Assemble rich context (system prompt + browser state + history + memory + warnings)
-  2. Call LLM for a single action decision
-  3. Extract memory fields (page_summary, finding) from the response
-  4. Return the parsed action for execute_action to dispatch
+Assembles rich context (system prompt + browser state + history + memory +
+warnings) and calls LLM for a single action decision.  Extracts memory
+fields (page_summary, finding) from the response.
 
 LLM call: Yes, 1 per iteration (core cost).
 """
@@ -16,7 +14,7 @@ import time
 from langchain_core.messages import SystemMessage, HumanMessage
 
 from llm import get_llm
-from v2.models.schemas import AgentState
+from v3.models.schemas import AgentState
 from agent_config import settings
 from utils import extract_json, tlog
 import run_context
@@ -25,7 +23,6 @@ from shared.result_helpers import detect_default_search_engine
 
 
 # ─── LLM prompt templates ──────────────────────────────────────────
-# Reused from v1 exec_step — identical prompts ensure behavioral parity.
 
 EXECUTOR_SYSTEM = """\
 You are a browser automation executor. You control the browser by outputting JSON instructions to complete tasks.
@@ -42,15 +39,15 @@ Step {step}/{total_steps}: {goal}
 [Historical Evaluations]
 {evaluations_summary}
 
-[Supported Actions] (each action must include a "reason" field explaining why it is performed)
-1. {{"action": "goto", "url": "https://...", "reason": "reason"}}
-2. {{"action": "click", "node_id": "1.2", "reason": "reason"}}
-3. {{"action": "input", "node_id": "1.1", "text": "text", "reason": "reason"}}
-4. {{"action": "select", "node_id": "2.3", "value": "en", "reason": "reason"}}
-5. {{"action": "get_text", "node_id": "3.1", "reason": "reason"}}  — get full text of a node (DOM is simplified by default; use this when details are needed)
-6. {{"action": "switch_tab", "tab_id": 2, "reason": "reason"}}  — switch to an existing tab
-7. {{"action": "wait", "seconds": 2, "reason": "reason"}}
-8. {{"action": "done", "result": "execution result summary", "reason": "reason"}}
+[Supported Actions] (include a brief "reason" field)
+1. {{"action": "goto", "url": "https://...", "reason": "..."}}
+2. {{"action": "click", "node_id": "1.2", "reason": "..."}}
+3. {{"action": "input", "node_id": "1.1", "text": "text", "reason": "..."}}
+4. {{"action": "select", "node_id": "2.3", "value": "en", "reason": "..."}}
+5. {{"action": "get_text", "node_id": "3.1", "reason": "..."}}  — get full text of a node (DOM is simplified; use this for details)
+6. {{"action": "switch_tab", "tab_id": 2, "reason": "..."}}  — switch to an existing tab
+7. {{"action": "wait", "seconds": 2, "reason": "..."}}
+8. {{"action": "done", "result": "execution result summary", "reason": "..."}}
 
 Optional fields (add as needed):
 - "page_summary": when visiting a page for the first time, summarize the page content and purpose in one sentence
@@ -73,6 +70,12 @@ Example: {{"action": "click", "node_id": "1.2", "reason": "...", "page_summary":
 - If a link points to an external detail page (e.g., bulletins, catalog, etc.), click through to get the full information
 - NEVER click submit/send/post buttons on forms unless the user's original task explicitly asks you to submit something. You may fill in form fields for searching or filtering, but do NOT submit contact forms, application forms, feedback forms, etc.
 - If you find contact information (phone numbers, email addresses), extract and report it in your done result — do NOT attempt to call or email
+
+[Batch Extraction]
+- When extracting list or table data (e.g., restaurants, schools, products), use get_text on the **parent/container node** to capture multiple items at once, instead of extracting them one by one
+- For example, if a list of restaurants is inside node "3.2", do get_text on "3.2" to get all items in one call, rather than doing get_text on "3.2.1", "3.2.2", "3.2.3" separately
+- For list/collection tasks, **3-5 representative results is sufficient** — do not exhaustively extract every single item. Once you have enough data to answer the task, return done immediately
+- After each get_text, check whether you already have enough information. If yes, return done right away with all collected data
 
 [Search Engine Efficiency]
 - Prefer using direct URL navigation for search engines rather than typing in the search box and clicking submit. This is more reliable and saves steps:
@@ -132,7 +135,7 @@ Your previous actions did not produce the expected results. Please try a complet
 - If you have tried multiple approaches and still cannot complete the task, return done and explain the issues encountered"""
 
 
-async def plan_step_node(state: AgentState) -> dict:
+async def step_planner_node(state: AgentState) -> dict:
     """LLM decides the next action based on current page context."""
     if run_context.is_cancelled():
         raise asyncio.CancelledError("Task cancelled by user")
@@ -171,7 +174,7 @@ async def plan_step_node(state: AgentState) -> dict:
     # ── Action history ─────────────────────────────────────────
     history_block = ""
     logs_summary = br.get_logs_summary(n=5)
-    print(f"  [plan step {step_num}] Recent logs: {logs_summary}")
+    print(f"  [step_planner {step_num}] Recent logs: {logs_summary}")
     if logs_summary != "(none)":
         history_block = "\n\n" + LOGS_HISTORY.format(history=logs_summary)
 
@@ -186,7 +189,7 @@ async def plan_step_node(state: AgentState) -> dict:
     is_stuck, stuck_reason = br.is_stuck(n=3)
     if is_stuck:
         stuck_block = "\n\n" + STUCK_WARNING.format(reason=stuck_reason)
-        print(f"  [plan step {step_num}] Stuck warning: {stuck_reason}")
+        print(f"  [step_planner {step_num}] Stuck warning: {stuck_reason}")
 
     # ── LLM call ───────────────────────────────────────────────
     messages = [
@@ -201,34 +204,34 @@ async def plan_step_node(state: AgentState) -> dict:
         )),
     ]
 
-    task.start_llm_step("plan_step")
-    tlog(f"[plan step {step_num}] LLM call start")
+    task.start_llm_step("step_planner")
+    tlog(f"[step_planner {step_num}] LLM call start")
 
     llm = get_llm()
     t0 = time.time()
     response = await llm.ainvoke(messages)
     duration_ms = int((time.time() - t0) * 1000)
 
-    state.llm_usage.add(response, node="plan_step", messages=messages, duration_ms=duration_ms)
+    state.llm_usage.add(response, node="step_planner", messages=messages, duration_ms=duration_ms)
     task.complete_llm_step(duration_ms, summary=response.content[:100])
-    tlog(f"[plan step {step_num}] LLM ({duration_ms}ms): {response.content[:200]}")
+    tlog(f"[step_planner {step_num}] LLM ({duration_ms}ms): {response.content[:200]}")
 
     try:
         action = extract_json(response.content)
     except (json.JSONDecodeError, TypeError):
-        print(f"  [plan step {step_num}] JSON parse failed, defaulting to wait")
+        print(f"  [step_planner {step_num}] JSON parse failed, defaulting to wait")
         action = {"action": "wait", "seconds": 1}
 
     # ── Extract memory fields ──────────────────────────────────
     page_summary = action.get("page_summary", "")
     if page_summary and br.current_url:
         memory.update_summary(br.current_url, page_summary)
-        print(f"  [plan step {step_num}] Page summary: {page_summary}")
+        print(f"  [step_planner {step_num}] Page summary: {page_summary}")
 
     finding = action.get("finding", "")
     if finding:
         memory.add_finding(finding)
-        print(f"  [plan step {step_num}] Key finding: {finding}")
+        print(f"  [step_planner {step_num}] Key finding: {finding}")
 
     return {
         "memory": memory,

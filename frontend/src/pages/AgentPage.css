@@ -376,8 +376,78 @@
   font-size: 14px;
   color: #334155;
   line-height: 1.7;
-  white-space: pre-wrap;
   word-break: break-word;
+}
+
+/* ── Markdown Rendering ──────────────────────────── */
+
+.agent-markdown h2 {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1e293b;
+  margin: 16px 0 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.agent-markdown h3 {
+  font-size: 14px;
+  font-weight: 600;
+  color: #334155;
+  margin: 12px 0 6px;
+}
+
+.agent-markdown p {
+  margin: 6px 0;
+}
+
+.agent-markdown ul, .agent-markdown ol {
+  margin: 4px 0;
+  padding-left: 20px;
+}
+
+.agent-markdown li {
+  margin: 2px 0;
+}
+
+.agent-markdown strong {
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.agent-markdown a {
+  color: #3b82f6;
+  text-decoration: none;
+  word-break: break-all;
+}
+
+.agent-markdown a:hover {
+  text-decoration: underline;
+}
+
+.agent-markdown table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: 13px;
+}
+
+.agent-markdown th, .agent-markdown td {
+  padding: 6px 10px;
+  border: 1px solid #e2e8f0;
+  text-align: left;
+}
+
+.agent-markdown th {
+  background: #f8fafc;
+  font-weight: 600;
+  color: #475569;
+}
+
+.agent-markdown hr {
+  border: none;
+  border-top: 1px solid #e2e8f0;
+  margin: 12px 0;
 }
 
 .agent-link {

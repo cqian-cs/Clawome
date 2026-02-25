@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { startAgent, getAgentStatus, stopAgent } from '../api'
 import './AgentPage.css'
 
@@ -96,55 +98,60 @@ function SubtaskCard({ st, steps, defaultExpanded }) {
     setExpanded(defaultExpanded)
   }, [defaultExpanded])
 
-  const hasSteps = steps.length > 0
+  const hasContent = steps.length > 0 || st.result
+  const toggleExpand = () => hasContent && setExpanded(e => !e)
 
   return (
     <div className={`agent-card agent-card-${st.status}`}>
-      <div className="agent-card-header" onClick={() => hasSteps && setExpanded(e => !e)} style={hasSteps ? { cursor: 'pointer' } : undefined}>
+      <div className="agent-card-header" onClick={toggleExpand} style={hasContent ? { cursor: 'pointer' } : undefined}>
         <span className="agent-step-num">{STATUS_ICONS[st.status] || '?'}</span>
         <span className="agent-card-step">{t('agent.step')} {st.step}</span>
         <span className="agent-card-goal">{st.goal}</span>
         <span className={`agent-tag agent-tag-${st.status}`}>{st.status}</span>
-        {hasSteps && (
-          <span className="agent-card-toggle">{expanded ? '\u25BC' : '\u25B6'} {steps.length}</span>
+        {hasContent && (
+          <span className="agent-card-toggle">{expanded ? '\u25BC' : '\u25B6'}</span>
         )}
       </div>
-      {st.result && (
-        <div className="agent-card-result">
-          <Linkify>{st.result}</Linkify>
-        </div>
-      )}
-      {expanded && hasSteps && (
-        <div className="agent-steps">
-          {steps.map(step => {
-            const isLLM = step.action?.action === 'llm'
-            const isRunning = step.status === 'running'
+      {expanded && (
+        <>
+          {st.result && (
+            <div className="agent-card-result">
+              <Linkify>{st.result}</Linkify>
+            </div>
+          )}
+          {steps.length > 0 && (
+            <div className="agent-steps">
+              {steps.map(step => {
+                const isLLM = step.action?.action === 'llm'
+                const isRunning = step.status === 'running'
 
-            if (isLLM) {
-              return (
-                <div
-                  key={step.index}
-                  className={`agent-step-llm-label${isRunning ? ' agent-step-llm-active' : ''}`}
-                >
-                  <span className="agent-step-llm-label-text">{stepDescription(step, llmNodeLabels)}</span>
-                </div>
-              )
-            }
+                if (isLLM) {
+                  return (
+                    <div
+                      key={step.index}
+                      className={`agent-step-llm-label${isRunning ? ' agent-step-llm-active' : ''}`}
+                    >
+                      <span className="agent-step-llm-label-text">{stepDescription(step, llmNodeLabels)}</span>
+                    </div>
+                  )
+                }
 
-            return (
-              <div
-                key={step.index}
-                className={`agent-step-row${step.status === 'failed' ? ' agent-step-failed' : ''}`}
-              >
-                <span className="agent-step-idx">{step.index}</span>
-                <span className={`agent-step-action agent-step-action-${step.action?.action || 'unknown'}`}>
-                  {actionLabels[step.action?.action] || step.action?.action || '?'}
-                </span>
-                <span className="agent-step-desc">{stepDescription(step, llmNodeLabels)}</span>
-              </div>
-            )
-          })}
-        </div>
+                return (
+                  <div
+                    key={step.index}
+                    className={`agent-step-row${step.status === 'failed' ? ' agent-step-failed' : ''}`}
+                  >
+                    <span className="agent-step-idx">{step.index}</span>
+                    <span className={`agent-step-action agent-step-action-${step.action?.action || 'unknown'}`}>
+                      {actionLabels[step.action?.action] || step.action?.action || '?'}
+                    </span>
+                    <span className="agent-step-desc">{stepDescription(step, llmNodeLabels)}</span>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </>
       )}
     </div>
   )
@@ -411,7 +418,9 @@ export default function AgentPage() {
           {status.final_result && (
             <div className="agent-final">
               <h3>{t('agent.result')}</h3>
-              <div className="agent-final-text"><Linkify>{status.final_result}</Linkify></div>
+              <div className="agent-final-text agent-markdown">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{status.final_result}</ReactMarkdown>
+              </div>
             </div>
           )}
 

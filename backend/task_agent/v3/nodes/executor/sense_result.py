@@ -4,28 +4,22 @@ Three-level detection:
   1. Tab change? → auto-switch to new tab, signal new_context
   2. URL change? → signal new_context
   3. Neither? → DOM diff analysis
-     - DOM changed → signal dom_changed (pass DOM to perceive)
-     - DOM same    → signal no_change (action may not have taken effect)
 
-Also handles:
-  - Stuck detection → early termination (save tokens)
-  - Max step exceeded → early termination
-  - Browser log recording
+Also handles stuck detection and max step exceeded.
 
-LLM call: None (pure logic).
+LLM call: None.
 """
 
 import asyncio
 import json
 
 from browser import api as browser_api
-from v2.models.schemas import AgentState
+from v3.models.schemas import AgentState
 from agent_config import settings
 import run_context
 
 from shared.result_helpers import collect_partial_result
 
-# Force-end subtask when consecutive no-progress steps reach this value
 _MAX_STUCK_STEPS = 5
 
 
@@ -38,7 +32,7 @@ async def sense_result_node(state: AgentState) -> dict:
     br = state.browser
     memory = state.memory
     action = state.current_action
-    step_num = state.action_count  # Already incremented by execute_action
+    step_num = state.action_count
 
     # If execute_action already handled "done", just pass through
     if action.get("action") == "done":
@@ -47,7 +41,6 @@ async def sense_result_node(state: AgentState) -> dict:
             "current_dom": "",
         }
 
-    # Retrieve post-action state from execute_action's output
     new_dom = state.current_dom or ""
     before_tab_ids = set(state.before_tab_ids) if state.before_tab_ids else br.get_tab_ids()
     before_url = state.before_url or ""
@@ -56,13 +49,16 @@ async def sense_result_node(state: AgentState) -> dict:
 
     # ── 1. Update browser state with post-action DOM ──────────
     if new_dom:
-        new_raw_tabs = await browser_api.get_tabs()
-        br.update_tabs(new_raw_tabs, dom=new_dom)
+        try:
+            new_raw_tabs = await browser_api.get_tabs()
+            br.update_tabs(new_raw_tabs, dom=new_dom)
+        except Exception as e:
+            print(f"  [sense step {step_num}] get_tabs failed: {e}, using cached state")
+            br.update_dom(new_dom)
 
     # ── 2. Tab change detection ───────────────────────────────
     tab_change = br.detect_tab_change(before_tab_ids)
 
-    # Auto-switch to new tab when click opens one
     if tab_change.startswith("new_tab:") and action.get("action") == "click":
         new_tab_id = int(tab_change.split(":")[1].strip().split(",")[0])
         print(f"  [sense step {step_num}] Click opened new tab {new_tab_id}, auto-switching")
@@ -70,13 +66,15 @@ async def sense_result_node(state: AgentState) -> dict:
             await asyncio.sleep(0.5)
             switch_resp = await browser_api.switch_tab(new_tab_id)
             new_dom = switch_resp.get("dom", "")
-            new_raw_tabs = await browser_api.get_tabs()
-            br.update_tabs(new_raw_tabs, dom=new_dom)
+            try:
+                new_raw_tabs = await browser_api.get_tabs()
+                br.update_tabs(new_raw_tabs, dom=new_dom)
+            except Exception:
+                br.update_dom(new_dom)
         except Exception as e:
             print(f"  [sense step {step_num}] Auto-switch to tab {new_tab_id} failed: {e}")
 
     # ── 3. Log the action ─────────────────────────────────────
-    # URL change detection annotation
     if action.get("action") in ("click", "goto") and api_status == "ok":
         if br.current_url == before_url:
             api_msg += " (page did not navigate)"
@@ -85,7 +83,7 @@ async def sense_result_node(state: AgentState) -> dict:
     print(f"  [sense step {step_num}] {json.dumps(action, ensure_ascii=False)} -> {api_msg}")
 
     # ── 4. Determine sense signal ─────────────────────────────
-    sense_signal = "new_context"  # default
+    sense_signal = "new_context"
 
     if tab_change:
         sense_signal = "new_context"
@@ -94,7 +92,6 @@ async def sense_result_node(state: AgentState) -> dict:
         sense_signal = "new_context"
         print(f"  [sense step {step_num}] URL changed → new_context")
     else:
-        # URL + Tab same → check DOM diff
         old_dom = state.current_dom or ""
         if new_dom and new_dom != old_dom and len(new_dom) > 50:
             sense_signal = "dom_changed"
