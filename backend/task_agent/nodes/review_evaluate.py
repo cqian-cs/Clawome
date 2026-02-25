@@ -19,12 +19,12 @@ from utils import extract_json, tlog
 MAX_SUBTASKS = 10  # Guard against infinite loops
 
 EVALUATE_SYSTEM = """\
-You are a rolling task evaluator and planner. After each subtask is completed, you assess progress and decide: is the task done, or what single next step should be taken?
+You are a rolling task evaluator and planner. After each subtask finishes (completed or failed), you assess progress and decide: is the task done, or what single next step should be taken?
 
 [Overall Task]
 {task}
 
-[Completed Subtasks]
+[Subtask Results (✓ = completed, ✗ = failed)]
 {completed_summary}
 
 [Collected Key Findings]
@@ -41,7 +41,7 @@ You are a rolling task evaluator and planner. After each subtask is completed, y
 Decide and return JSON:
 
 If the collected information is sufficient to fully answer/complete the user's task:
-{{"assessment": "Brief reason why the task is done", "next_action": "finish"}}
+{{"assessment": "Brief reason why the task is done", "next_action": "finish", "conclusion": "A comprehensive answer to the user's question, incorporating all key findings with specific data, numbers, and source URLs"}}
 
 If more work is needed, plan exactly ONE next subtask:
 {{"assessment": "Brief reason why more work is needed", "next_action": "continue", "next_subtask": {{"step": {next_step}, "goal": "Goal-oriented description of the next step"}}}}
@@ -49,6 +49,11 @@ If more work is needed, plan exactly ONE next subtask:
 Rules:
 - Only return JSON, do not add explanations
 - Assessment should be concise, one sentence
+- When returning "finish", you MUST include a high-quality "conclusion" field:
+  - The conclusion MUST be written in the SAME language as the user's original requirements
+  - Include concrete, verifiable details: quantitative data, specific names, dates, source URLs
+  - Incorporate ALL key findings from the completed subtasks and memory
+  - Do NOT write vague, generic summaries — every claim should be backed by specific data
 - When deciding "finish" vs "continue", focus on whether the completed subtasks + key findings already cover what the user asked for
 - When planning the next subtask, base it on ACTUAL results so far — do not assume what pages look like or what information is available
 - The next subtask should be goal-oriented (WHAT to accomplish), not prescriptive about HOW to navigate
@@ -82,30 +87,31 @@ You MUST respond in {language}."""
 
 
 async def evaluate_node(state: AgentState) -> dict:
-    """Rolling evaluator: assess the completed subtask, then decide finish or plan the next single subtask."""
+    """Rolling evaluator: assess the last subtask (completed or failed), then decide finish or plan the next single subtask."""
     task = state.task
 
-    # The most recently completed subtask
-    completed = [st for st in task.subtasks if st.status == "completed"]
-    last_completed = completed[-1] if completed else None
-    if not last_completed:
+    # The most recently done subtask (completed OR failed)
+    done_subtasks = [st for st in task.subtasks if st.status in ("completed", "failed")]
+    last_done = done_subtasks[-1] if done_subtasks else None
+    if not last_done:
         return {"task": task}
 
-    completed_count = len(completed)
+    completed_count = sum(1 for st in done_subtasks if st.status == "completed")
+    total_done = len(done_subtasks)
 
     # Guard: if we've hit the max subtask limit, go straight to final_check
-    if completed_count >= MAX_SUBTASKS:
+    if total_done >= MAX_SUBTASKS:
         print(f"  [evaluate] Max subtask limit ({MAX_SUBTASKS}) reached, routing to final_check")
         task.add_evaluation(
-            subtask_step=last_completed.step,
-            result=last_completed.result,
+            subtask_step=last_done.step,
+            result=last_done.result,
             assessment=f"Max subtask limit ({MAX_SUBTASKS}) reached, proceeding to final check",
         )
         task.save()
         return {"task": task}
 
-    # Build context for the LLM
-    completed_summary = task.get_completed_summary()
+    # Build context for the LLM — show both completed and failed subtasks
+    completed_summary = task.get_execution_summary()
     evaluations_summary = task.get_evaluations_summary(n=4)
     next_step = max(st.step for st in task.subtasks) + 1
 
@@ -141,9 +147,24 @@ async def evaluate_node(state: AgentState) -> dict:
     if state.browser.logs:
         browser_context = f"\n\n[Recent Browser Actions]\n{state.browser.get_logs_summary(n=3)}"
 
+    # Compose the human message based on whether the last subtask completed or failed
+    if last_done.status == "failed":
+        human_msg = (
+            f"Step {last_done.step} FAILED: \"{last_done.result}\". "
+            f"The subtask did not succeed. Decide: should we retry with a different approach, "
+            f"or is the overall task done based on what was collected so far?"
+            f"{browser_context}"
+        )
+    else:
+        human_msg = (
+            f"Step {last_done.step} completed: \"{last_done.result}\". "
+            f"Decide: is the overall task done, or what is the next step?"
+            f"{browser_context}"
+        )
+
     messages = [
         SystemMessage(content=prompt),
-        HumanMessage(content=f"Step {last_completed.step} completed: \"{last_completed.result}\". Decide: is the overall task done, or what is the next step?{browser_context}"),
+        HumanMessage(content=human_msg),
     ]
 
     llm = get_llm()
@@ -152,7 +173,7 @@ async def evaluate_node(state: AgentState) -> dict:
     t0 = time.time()
     response = await llm.ainvoke(messages)
     d = int((time.time() - t0) * 1000)
-    state.llm_usage.add(response, node="evaluate", messages=messages)
+    state.llm_usage.add(response, node="evaluate", messages=messages, duration_ms=d)
     state.task.complete_llm_step(d, summary="Evaluating progress…")
     tlog(f"[evaluate] LLM ({d}ms): {response.content[:200]}")
 
@@ -161,8 +182,8 @@ async def evaluate_node(state: AgentState) -> dict:
     except (json.JSONDecodeError, TypeError):
         print("  [evaluate] JSON parsing failed, treating as finish")
         task.add_evaluation(
-            subtask_step=last_completed.step,
-            result=last_completed.result,
+            subtask_step=last_done.step,
+            result=last_done.result,
             assessment="Evaluation parsing failed, proceeding to final check",
         )
         task.save()
@@ -176,30 +197,45 @@ async def evaluate_node(state: AgentState) -> dict:
         ns = data["next_subtask"]
         new_subtask = SubTask(step=ns["step"], goal=ns["goal"])
         task.replan_remaining([new_subtask])
-        # Critical: complete_subtask already set task.status = "completed"
-        # because there was no pre-planned next step. Override it.
+        # complete_subtask / fail_subtask may have set task.status to
+        # "completed" or "failed". Override it — we're continuing.
         task.status = "running"
         changes = f"Planned next subtask: step {new_subtask.step} — {new_subtask.goal}"
         print(f"  [evaluate] {changes}")
 
         task.add_evaluation(
-            subtask_step=last_completed.step,
-            result=last_completed.result,
+            subtask_step=last_done.step,
+            result=last_done.result,
             assessment=assessment,
             plan_changed=True,
             changes=changes,
         )
+        task.save()
+        return {"task": task, "llm_usage": state.llm_usage, "messages": [response]}
     else:
-        # Task is done (or no next subtask provided) — proceed to final_check
-        # Clear any remaining pending subtasks
+        # Task is done — evaluate provides conclusion directly, skip final_check
         task.replan_remaining([])
+        conclusion = data.get("conclusion", "")
         print(f"  [evaluate] Task done: {assessment}")
+
         task.add_evaluation(
-            subtask_step=last_completed.step,
-            result=last_completed.result,
+            subtask_step=last_done.step,
+            result=last_done.result,
             assessment=assessment,
         )
+        task.save()
 
-    task.save()
-
-    return {"task": task, "llm_usage": state.llm_usage, "messages": [response]}
+        if conclusion:
+            # Evaluate is confident — set final_result + task_satisfied to skip review
+            print(f"  [evaluate] Conclusion provided, skipping final_check")
+            return {
+                "task": task,
+                "llm_usage": state.llm_usage,
+                "final_result": conclusion,
+                "task_satisfied": True,
+                "messages": [response],
+            }
+        else:
+            # No conclusion — fall through to final_check for review
+            print(f"  [evaluate] No conclusion, routing to final_check")
+            return {"task": task, "llm_usage": state.llm_usage, "messages": [response]}

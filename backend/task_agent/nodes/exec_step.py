@@ -19,6 +19,11 @@ from agent_config import settings
 from utils import extract_json, tlog
 import run_context
 
+from shared.browser_actions import dispatch_action as _dispatch_action
+from shared.browser_actions import wait_for_stable_dom as _wait_for_stable_dom
+from shared.result_helpers import collect_partial_result as _collect_partial_result
+from shared.result_helpers import detect_default_search_engine as _detect_default_search_engine
+
 # ─── LLM prompt templates ──────────────────────────────────────────
 
 EXECUTOR_SYSTEM = """\
@@ -139,132 +144,6 @@ This is retry {retry_num}/{max_retries}."""
 _MAX_STUCK_STEPS = 5
 
 
-def _detect_default_search_engine(task_description: str) -> str:
-    """Pick the default search engine based on task language.
-
-    Chinese text → Baidu; otherwise → Bing.  Google is avoided because it
-    blocks automated browsers with CAPTCHA/anti-bot checks.
-    """
-    import re
-    if re.search(r'[\u4e00-\u9fff]', task_description):
-        return "Baidu (https://www.baidu.com)"
-    return "Bing (https://www.bing.com)"
-
-
-
-
-# ─── Page load waiting ────────────────────────────────────────────
-
-# DOM length below this value is considered potentially still loading
-_MIN_DOM_LENGTH = 50
-# Maximum number of wait rounds
-_MAX_WAIT_ROUNDS = 5
-# Seconds to wait per round
-_WAIT_INTERVAL = 4
-
-
-async def _wait_for_stable_dom(dom: str, lite: bool, step_num: int) -> str:
-    """Detect whether the DOM is in a loading state; wait until stable and return.
-
-    Conditions for detecting loading (any one triggers):
-      - DOM content is too short (< 50 characters), page is nearly empty
-      - DOM is identical to the previous one and too short (no change after refresh)
-
-    Waits up to _MAX_WAIT_ROUNDS rounds, each _WAIT_INTERVAL seconds.
-    """
-    for i in range(_MAX_WAIT_ROUNDS):
-        # DOM is long enough; consider the page loaded
-        if len(dom) >= _MIN_DOM_LENGTH:
-            return dom
-
-        print(f"  [step {step_num}] DOM too short ({len(dom)} chars), waiting for page to load... ({i+1}/{_MAX_WAIT_ROUNDS})")
-        await asyncio.sleep(_WAIT_INTERVAL)
-        dom = await browser_api.get_dom(lite=lite)
-
-    if len(dom) < _MIN_DOM_LENGTH:
-        print(f"  [step {step_num}] Page load timed out, using current DOM")
-    return dom
-
-
-# ─── Execute browser action ──────────────────────────────────────
-
-async def _dispatch_action(action: dict, browser=None) -> dict:
-    """Dispatch and execute a browser action; return the full API response.
-
-    Any API exceptions are not raised but returned as an error response for the LLM to handle.
-    The browser parameter is used to detect duplicate tabs during goto.
-    """
-    action_type = action.get("action", "")
-
-    try:
-        if action_type == "goto":
-            # Check if the target URL is already open in a tab
-            url = action.get("url", "")
-            if browser and url:
-                existing_tab = browser.find_tab_by_url(url)
-                if existing_tab and not existing_tab.active:
-                    print(f"  [step_exec] URL already open in tab {existing_tab.tab_id}, auto-switching")
-                    return await browser_api.switch_tab(existing_tab.tab_id)
-            return await browser_api.open_browser(url)
-
-        if action_type == "click":
-            return await browser_api.click(action["node_id"])
-
-        if action_type == "input":
-            return await browser_api.input_text(action["node_id"], action["text"])
-
-        if action_type == "select":
-            return await browser_api.select(action["node_id"], action["value"])
-
-        if action_type == "switch_tab":
-            # New tabs may need time to initialize; retry with delay on failure
-            for tab_attempt in range(3):
-                try:
-                    return await browser_api.switch_tab(action["tab_id"])
-                except Exception:
-                    if tab_attempt < 2:
-                        await asyncio.sleep(1)
-                    else:
-                        raise
-
-        if action_type == "get_text":
-            text = await browser_api.get_text(action["node_id"])
-            dom = await browser_api.get_dom()
-            return {"status": "ok", "dom": dom, "message": f"[{action['node_id']}] full text: {text}"}
-
-        if action_type == "wait":
-            await asyncio.sleep(action.get("seconds", 1))
-            dom = await browser_api.get_dom()
-            return {"status": "ok", "dom": dom, "message": f"waited {action.get('seconds', 1)} seconds"}
-
-        print(f"  [step_exec] Unknown action: {action_type}, skipping")
-
-    except Exception as e:
-        print(f"  [step_exec] Action failed: {e}")
-        try:
-            dom = await browser_api.get_dom()
-        except Exception:
-            dom = ""
-        return {"status": "error", "dom": dom, "message": f"{action_type} failed: {e}"}
-
-    dom = await browser_api.get_dom()
-    return {"status": "ok", "dom": dom, "message": f"unknown action {action_type}"}
-
-
-# ─── Helper functions ────────────────────────────────────────────────
-
-def _collect_partial_result(memory, browser) -> str:
-    """Collect partial results obtained so far from memory and browser logs."""
-    parts = []
-    if memory.findings:
-        parts.append("Key findings: " + "; ".join(memory.findings[-3:]))
-    # Extract get_text results from recent logs
-    for log in browser.logs[-5:]:
-        if log.action.get("action") == "get_text" and log.status == "ok":
-            parts.append(f"Extracted text: {log.response[:200]}")
-    return " | ".join(parts) if parts else ""
-
-
 # ─── Node: step_exec ─────────────────────────────────────────
 
 async def step_exec_node(state: AgentState) -> dict:
@@ -381,7 +260,7 @@ async def step_exec_node(state: AgentState) -> dict:
     response = await llm.ainvoke(messages)
     duration_ms = int((time.time() - t0) * 1000)
 
-    state.llm_usage.add(response, node="step_exec", messages=messages)
+    state.llm_usage.add(response, node="step_exec", messages=messages, duration_ms=duration_ms)
     task.complete_llm_step(duration_ms, summary=response.content[:100])
     tlog(f"[step {step_num}] LLM ({duration_ms}ms): {response.content[:200]}")
 
@@ -486,7 +365,7 @@ async def step_exec_node(state: AgentState) -> dict:
         t0 = time.time()
         retry_response = await llm.ainvoke(retry_messages)
         d = int((time.time() - t0) * 1000)
-        state.llm_usage.add(retry_response, node="step_exec_retry", messages=retry_messages)
+        state.llm_usage.add(retry_response, node="step_exec_retry", messages=retry_messages, duration_ms=d)
         task.complete_llm_step(d, summary=retry_response.content[:100])
         tlog(f"[step {step_num}] retry LLM ({d}ms): {retry_response.content[:200]}")
 

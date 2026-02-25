@@ -10,7 +10,15 @@ Advanced methods:
   detect_new_tab  — compare tab lists before/after to find and switch to new tabs
 """
 
+import os
 import httpx
+
+# Bypass HTTP proxy for local browser service connections.
+# Without this, HTTP_PROXY (e.g. a local clash/v2ray proxy) causes httpx
+# to route localhost:5001 requests through the proxy, which returns 502.
+_no = os.environ.get("NO_PROXY", "")
+if "localhost" not in _no and "127.0.0.1" not in _no:
+    os.environ["NO_PROXY"] = f"{_no},localhost,127.0.0.1".lstrip(",")
 
 BASE_URL = "http://localhost:5001/api/browser"
 API_TIMEOUT = 60

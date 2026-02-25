@@ -63,3 +63,6 @@ backend/task_agent/logs/
 # Temporary / Downloads
 tmp/
 *.tmp
+
+# 开发记录
+开发记录/

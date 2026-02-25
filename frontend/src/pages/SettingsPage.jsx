@@ -6,6 +6,49 @@ import {
 } from '../api'
 import './SettingsPage.css'
 
+// ── LLM Provider presets ──
+
+const LLM_PROVIDER_PRESETS = [
+  { key: 'dashscope', label: 'DashScope (Qwen)',
+    apiBase: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    models: ['qwen3.5-plus', 'qwen-plus', 'qwen-max', 'qwen-turbo'], needsApiBase: true },
+  { key: 'openai', label: 'OpenAI',
+    apiBase: 'https://api.openai.com/v1',
+    models: ['gpt-4o', 'gpt-4o-mini', 'o1-mini', 'gpt-4-turbo'], needsApiBase: true },
+  { key: 'anthropic', label: 'Anthropic (Claude)',
+    apiBase: '',
+    models: ['claude-sonnet-4-20250514', 'claude-3-5-haiku-20241022'], needsApiBase: false },
+  { key: 'google', label: 'Google (Gemini)',
+    apiBase: '',
+    models: ['gemini-2.0-flash', 'gemini-2.5-pro'], needsApiBase: false },
+  { key: 'deepseek', label: 'DeepSeek',
+    apiBase: '',
+    models: ['deepseek-chat', 'deepseek-reasoner'], needsApiBase: false },
+  { key: 'moonshot', label: 'Moonshot (Kimi)',
+    apiBase: '',
+    models: ['moonshot-v1-128k', 'moonshot-v1-32k', 'moonshot-v1-8k'], needsApiBase: false },
+  { key: 'zhipu', label: 'Zhipu (GLM)',
+    apiBase: '',
+    models: ['glm-4.7', 'glm-4.5'], needsApiBase: false },
+  { key: 'volcengine', label: 'Volcengine (Doubao)',
+    apiBase: '',
+    models: ['doubao-seed-1.6', 'doubao-pro-32k'], needsApiBase: false },
+  { key: 'minimax', label: 'MiniMax',
+    apiBase: '',
+    models: ['minimax-text-01'], needsApiBase: false },
+  { key: 'mistral', label: 'Mistral',
+    apiBase: '',
+    models: ['mistral-large-latest', 'codestral-latest'], needsApiBase: false },
+  { key: 'groq', label: 'Groq',
+    apiBase: '',
+    models: ['llama-3.3-70b-versatile', 'mixtral-8x7b-32768'], needsApiBase: false },
+  { key: 'xai', label: 'xAI (Grok)',
+    apiBase: '',
+    models: ['grok-2', 'grok-3-mini'], needsApiBase: false },
+  { key: 'custom', label: 'Custom',
+    apiBase: '', models: [], needsApiBase: true },
+]
+
 // ── Navigation sections ──
 
 const SECTIONS = [
@@ -56,10 +99,12 @@ const SECTION_GROUPS = {
   agent: [
     {
       title: 'settings.llmProvider',
+      custom: 'llm_provider',  // rendered by custom code
+      items: [],
+    },
+    {
+      title: 'settings.llmParams',
       items: [
-        { key: 'llm_api_key', label: 'API Key', unit: '', desc: 'settings.apiKeyDesc', type: 'password', placeholder: 'sk-...' },
-        { key: 'llm_api_base', label: 'API Base URL', unit: '', desc: 'settings.apiBaseDesc', type: 'text', placeholder: 'https://dashscope.aliyuncs.com/compatible-mode/v1' },
-        { key: 'llm_model', label: 'Model Name', unit: '', desc: 'settings.modelNameDesc', type: 'text', placeholder: 'qwen3.5-plus' },
         { key: 'llm_temperature', label: 'Temperature', unit: '', desc: 'settings.temperatureDesc' },
         { key: 'llm_max_tokens', label: 'Max Tokens', unit: 'tokens', desc: 'settings.maxTokensDesc' },
       ],
@@ -141,6 +186,13 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [showApiKey, setShowApiKey] = useState(false)
+  // provider → api_key cache (persisted in localStorage)
+  const [providerKeys, setProviderKeys] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('clawome_provider_keys') || '{}') }
+    catch { return {} }
+  })
+
 
   // Compressor state
   const [scripts, setScripts] = useState([])
@@ -156,9 +208,17 @@ export default function SettingsPage() {
   const load = useCallback(async () => {
     try {
       const [configRes, compRes] = await Promise.all([getConfig(), getCompressors()])
-      setValues(configRes.data.config)
+      const cfg = configRes.data.config
+      setValues(cfg)
       setDefaults(configRes.data.defaults)
       setOverrides(configRes.data.overrides)
+      // Backend is the source of truth — always overwrite cache for current provider
+      const p = cfg.llm_provider || 'dashscope'
+      setProviderKeys(prev => {
+        const updated = { ...prev, [p]: cfg.llm_api_key || '' }
+        try { localStorage.setItem('clawome_provider_keys', JSON.stringify(updated)) } catch {}
+        return updated
+      })
       setRules(configRes.data.config.compressor_rules || [])
       setDisabledCompressors(configRes.data.config.disabled_compressors || [])
       setCompressorSettings(configRes.data.config.compressor_settings || {})
@@ -200,6 +260,14 @@ export default function SettingsPage() {
           Object.entries(res.data.config).filter(([k, v]) => v !== defaults[k])
         )
       )
+      // Persist current provider's key to localStorage cache
+      const provider = res.data.config.llm_provider || 'dashscope'
+      const apiKey = res.data.config.llm_api_key || ''
+      if (apiKey) {
+        const updated = { ...providerKeys, [provider]: apiKey }
+        setProviderKeys(updated)
+        try { localStorage.setItem('clawome_provider_keys', JSON.stringify(updated)) } catch {}
+      }
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
     } catch (err) {
@@ -385,7 +453,139 @@ export default function SettingsPage() {
   const isReadonly = currentScript?.builtin || currentScript?.official
   const meta = SECTION_META[section]
 
-  // ── Render config groups (General / Timeouts) ──
+  // ── Provider change handler (auto-fill api_base + model) ──
+  const handleProviderChange = (providerKey) => {
+    const oldProvider = values.llm_provider || 'dashscope'
+    const preset = LLM_PROVIDER_PRESETS.find(p => p.key === providerKey) || LLM_PROVIDER_PRESETS[0]
+    const newValues = { ...values, llm_provider: providerKey }
+    // Save current provider's API key to cache, restore new provider's cached key
+    const updated = { ...providerKeys, [oldProvider]: values.llm_api_key || '' }
+    setProviderKeys(updated)
+    try { localStorage.setItem('clawome_provider_keys', JSON.stringify(updated)) } catch {}
+    newValues.llm_api_key = updated[providerKey] ?? ''
+    // Auto-fill api_base
+    if (preset.apiBase) {
+      newValues.llm_api_base = preset.apiBase
+    } else if (!preset.needsApiBase) {
+      newValues.llm_api_base = ''
+    }
+    // Auto-fill default model
+    if (preset.models.length > 0) {
+      newValues.llm_model = preset.models[0]
+    } else {
+      newValues.llm_model = ''
+    }
+    setValues(newValues)
+    setSaved(false)
+  }
+
+  // ── Render LLM Provider custom group ──
+  const renderLLMProviderGroup = () => {
+    const currentProvider = values.llm_provider || 'dashscope'
+    const preset = LLM_PROVIDER_PRESETS.find(p => p.key === currentProvider) || LLM_PROVIDER_PRESETS[0]
+    const showApiBase = preset.needsApiBase || currentProvider === 'custom'
+
+    return (
+      <div className="settings-items">
+        {/* Provider dropdown */}
+        <div className="settings-item">
+          <div className="settings-item-info">
+            <label className="settings-label">{t('settings.provider')}</label>
+            <span className="settings-desc-text">{t('settings.providerDesc')}</span>
+          </div>
+          <div className="settings-item-input">
+            <select
+              className="settings-input settings-input-text"
+              value={currentProvider}
+              onChange={e => handleProviderChange(e.target.value)}
+            >
+              {LLM_PROVIDER_PRESETS.map(p => (
+                <option key={p.key} value={p.key}>{p.label}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* API Key */}
+        <div className="settings-item">
+          <div className="settings-item-info">
+            <label className="settings-label">API Key</label>
+            <span className="settings-desc-text">{t('settings.apiKeyDesc')}</span>
+          </div>
+          <div className="settings-item-input">
+            <div style={{ position: 'relative', display: 'inline-block' }}>
+              <input
+                type={showApiKey ? 'text' : 'password'}
+                className={`settings-input settings-input-text ${'llm_api_key' in overrides ? 'settings-input-modified' : ''}`}
+                value={values.llm_api_key ?? ''}
+                placeholder="sk-..."
+                onChange={e => handleChange('llm_api_key', e.target.value)}
+                style={{ paddingRight: 30 }}
+              />
+              <svg
+                className="settings-eye-toggle"
+                onClick={() => setShowApiKey(v => !v)}
+                width="16" height="16" viewBox="0 0 24 24"
+                fill="none" stroke="currentColor" strokeWidth="2"
+                strokeLinecap="round" strokeLinejoin="round"
+              >
+                {showApiKey ? (
+                  <>
+                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
+                    <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
+                    <line x1="1" y1="1" x2="23" y2="23" />
+                  </>
+                ) : (
+                  <>
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                    <circle cx="12" cy="12" r="3" />
+                  </>
+                )}
+              </svg>
+            </div>
+          </div>
+        </div>
+
+        {/* API Base URL — only for providers that need it */}
+        {showApiBase && (
+          <div className="settings-item">
+            <div className="settings-item-info">
+              <label className="settings-label">API Base URL</label>
+              <span className="settings-desc-text">{t('settings.apiBaseDesc')}</span>
+            </div>
+            <div className="settings-item-input">
+              <input
+                type="text"
+                className={`settings-input settings-input-text ${'llm_api_base' in overrides ? 'settings-input-modified' : ''}`}
+                value={values.llm_api_base ?? ''}
+                placeholder={preset.apiBase || 'https://...'}
+                onChange={e => handleChange('llm_api_base', e.target.value)}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Model — plain text input */}
+        <div className="settings-item">
+          <div className="settings-item-info">
+            <label className="settings-label">{t('settings.modelName')}</label>
+            <span className="settings-desc-text">{t('settings.modelNameDesc')}</span>
+          </div>
+          <div className="settings-item-input">
+            <input
+              type="text"
+              className={`settings-input settings-input-text ${'llm_model' in overrides ? 'settings-input-modified' : ''}`}
+              value={values.llm_model ?? ''}
+              placeholder={preset.models[0] || 'model-name'}
+              onChange={e => handleChange('llm_model', e.target.value)}
+            />
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Render config groups (General / Timeouts / Agent) ──
   const renderConfigSection = (sectionKey) => {
     const groups = SECTION_GROUPS[sectionKey] || []
     return (
@@ -394,6 +594,7 @@ export default function SettingsPage() {
           {groups.map(group => (
             <div key={group.title} className="settings-group">
               <h3 className="settings-group-title">{t(group.title)}</h3>
+              {group.custom === 'llm_provider' ? renderLLMProviderGroup() : (
               <div className="settings-items">
                 {group.items.map(item => {
                   const isOverridden = item.key in overrides
@@ -452,6 +653,7 @@ export default function SettingsPage() {
                   )
                 })}
               </div>
+              )}
             </div>
           ))}
         </div>

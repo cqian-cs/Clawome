@@ -193,6 +193,12 @@
     "domLite": "DOM Lite Mode",
     "keyboardScroll": "Keyboard & Scroll",
     "llmProvider": "LLM Provider",
+    "llmParams": "LLM Parameters",
+    "provider": "Provider",
+    "providerDesc": "Select your LLM provider. API Base and model list auto-fill on switch.",
+    "modelName": "Model",
+    "customModel": "Custom model name...",
+    "backToList": "Back to list",
     "agentBehavior": "Agent Behavior",
     "navTimeouts": "Navigation Timeouts",
     "pageLoadWaits": "Page Load Waits",
@@ -237,9 +243,9 @@
     "keepHeadDesc": "Number of leading characters kept before the …(X chars omitted) marker",
     "typeDelayDesc": "Delay between keystrokes when typing",
     "scrollDistDesc": "Default scroll distance per step",
-    "apiKeyDesc": "API key for the LLM provider (OpenAI-compatible endpoint)",
-    "apiBaseDesc": "OpenAI-compatible endpoint URL",
-    "modelNameDesc": "Bare model name, no provider prefix. e.g. qwen3.5-plus, gpt-4o",
+    "apiKeyDesc": "API key for the selected LLM provider",
+    "apiBaseDesc": "API endpoint URL (auto-filled for most providers)",
+    "modelNameDesc": "Model name without provider prefix, e.g. qwen3.5-plus, gpt-4o",
     "temperatureDesc": "0 = deterministic, higher = more creative",
     "maxTokensDesc": "Maximum tokens per LLM response",
     "maxStepsDesc": "Maximum action steps before a subtask is force-completed",
@@ -307,6 +313,7 @@
     "forLlm": "For LLM agents",
     "cat": {
       "overview": "Overview",
+      "installation": "Installation",
       "skillDocs": "Agent Skill Files",
       "quickstart": "Quick Start",
       "compressors": "Compressors",
@@ -320,8 +327,10 @@
       "screenshot": "Screenshot",
       "fileDownload": "File & Download",
       "pageState": "Page State",
-      "control": "Browser Control"
-    }
+      "control": "Browser Control",
+      "taskAgent": "Task Agent"
+    },
+    "taskAgentGroup": "Task Agent"
   },
 
   "interactive": {

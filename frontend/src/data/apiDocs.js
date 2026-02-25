@@ -1,5 +1,6 @@
 export const categories = [
   { id: 'overview', labelKey: 'docs.cat.overview' },
+  { id: 'installation', labelKey: 'docs.cat.installation' },
   { id: 'skill-docs', labelKey: 'docs.cat.skillDocs' },
   { id: 'quickstart', labelKey: 'docs.cat.quickstart' },
   { id: 'compressors', labelKey: 'docs.cat.compressors' },
@@ -14,6 +15,7 @@ export const categories = [
   { id: 'file-download', labelKey: 'docs.cat.fileDownload' },
   { id: 'page-state', labelKey: 'docs.cat.pageState' },
   { id: 'control', labelKey: 'docs.cat.control' },
+  { id: 'task-agent', labelKey: 'docs.cat.taskAgent' },
 ]
 
 export const docs = {
@@ -38,6 +40,76 @@ Base URL: http://localhost:5001/api
 \`\`\`
 
 Errors: \`{"status": "error", "message": "..."}\``,
+
+installation: `# Installation
+
+## Prerequisites
+
+- Python 3.10+
+- Node.js 18+
+- Git
+
+## 1. Download
+
+\`\`\`bash
+git clone https://github.com/CodingLucasLi/Clawome.git
+cd Clawome
+\`\`\`
+
+## 2. Environment Configuration
+
+Copy the example environment file and fill in your LLM credentials (required for Task Agent):
+
+\`\`\`bash
+cp .env.example .env
+\`\`\`
+
+Edit \`.env\`:
+
+\`\`\`bash
+# LLM Provider (required for Task Agent)
+# Currently supports Qwen (Tongyi Qianwen) only. More models coming soon.
+LLM_API_KEY=sk-your-api-key-here
+LLM_API_BASE=https://dashscope.aliyuncs.com/compatible-mode/v1
+LLM_MODEL=qwen3.5-plus
+\`\`\`
+
+> **Note:** The current version only supports **Qwen (Tongyi Qianwen)** as the LLM provider. Support for more models (GPT, Claude, DeepSeek, etc.) is coming soon.
+
+> The \`.env\` file is optional if you only use the REST API / DOM compression. You can also configure LLM credentials later via the Settings page.
+
+## 3. One-Command Start
+
+\`\`\`bash
+./start.sh
+# Dashboard:  http://localhost:5173
+# API:        http://localhost:5001
+\`\`\`
+
+\`start.sh\` will automatically:
+
+- Create a Python virtual environment
+- Install all backend & frontend dependencies
+- Download Chromium via Playwright
+- Load \`.env\` configuration
+- Start both backend and frontend servers
+
+## Manual Setup (Alternative)
+
+\`\`\`bash
+# Backend
+cd backend
+python -m venv venv
+source venv/bin/activate    # Windows: venv\\Scripts\\activate
+pip install -r requirements.txt
+playwright install chromium
+python app.py               # Starts on http://localhost:5001
+
+# Frontend (in another terminal)
+cd frontend
+npm install
+npm run dev                 # Starts on http://localhost:5173
+\`\`\``,
 
 quickstart: `# Quick Start
 
@@ -89,7 +161,7 @@ curl -X POST http://localhost:5001/api/browser/close
 Give these files to your AI agent — they contain complete API documentation with request/response examples. The agent can call the APIs immediately after reading.
 
 - [/skill](/skill) — Entry point. Quick start, key concepts, and links to all API details
-- [/skill/core.md](/skill/core.md) — Navigation, DOM reading, interaction, scrolling, keyboard (20 endpoints)
+- [/skill/core.md](/skill/core.md) — Navigation, DOM reading, interaction, scrolling, keyboard, Task Agent (24 endpoints)
 - [/skill/manage.md](/skill/manage.md) — Tabs, screenshot, file upload/download, page state, browser control (14 endpoints)
 - [/skill/customize.md](/skill/customize.md) — Compressor scripts, configuration (8 endpoints)
 
@@ -1362,4 +1434,159 @@ POST /api/browser/close
 \`\`\`
 
 After closing, you can call \`POST /open\` to start a new browser session.`,
+
+'task-agent': `# Task Agent API
+
+The Task Agent is an AI-powered autonomous browser agent. Give it a natural language task description, and it will plan subtasks, execute browser actions, evaluate progress, and return structured results.
+
+> **Note:** The current version only supports **Qwen (Tongyi Qianwen)** as the LLM provider. Support for more models is coming soon.
+
+## How It Works
+
+\`\`\`
+User: "Find AI-related programs at NYU Tandon"
+    |
+    v
+Main Planner (LLM) ─── Decompose into subtasks
+    |
+    v
+Executor Loop:
+    Read DOM → LLM decides action → Execute → Log
+    |                                          |
+    +── Supervisor (every 5 steps)
+    +── Evaluator (per subtask completion)
+    |
+    v
+Final Review (LLM) ─── Verify all requirements met
+    |
+    v
+Summary + Structured Result
+\`\`\`
+
+## Workflow Nodes
+
+| Node | Role | Trigger |
+|------|------|---------|
+| \`main_planner\` | Decompose task into numbered subtasks | Once at start |
+| \`step_exec\` | Execute single browser action via LLM | Every step |
+| \`supervisor\` | Detect execution anomalies (loops, stuck) | Every 5 steps |
+| \`page_doctor\` | Diagnose and fix page loading issues | On errors |
+| \`evaluate\` | Assess subtask completion, extract findings | On subtask done |
+| \`final_check\` | Verify all requirements satisfied | After all subtasks |
+| \`replan\` | Add supplementary subtasks if incomplete | On review failure |
+| \`summary\` | Aggregate results and statistics | On success |
+
+---
+
+## Start Task
+
+Start a new autonomous task. The agent runs in the background.
+
+\`\`\`
+POST /api/agent/start
+\`\`\`
+
+**Request Body:**
+
+\`\`\`json
+{
+  "task": "Search Hacker News for the latest AI news and summarize top 3 stories"
+}
+\`\`\`
+
+- \`task\` (string, required) — Natural language task description.
+
+**Response:**
+
+\`\`\`json
+{
+  "status": "ok",
+  "message": "Task started"
+}
+\`\`\`
+
+**Errors:**
+
+- \`409\` — A task is already running (\`error_code: "task_running"\`)
+- \`400\` — Missing task description or LLM not configured
+
+---
+
+## Poll Status
+
+Poll the current task progress. Use this endpoint to monitor subtask execution, step details, and LLM usage.
+
+\`\`\`
+GET /api/agent/status
+\`\`\`
+
+**Response (running):**
+
+\`\`\`json
+{
+  "running": true,
+  "task": "Search Hacker News for AI news...",
+  "subtasks": [
+    {
+      "id": 1,
+      "description": "Navigate to Hacker News",
+      "status": "completed",
+      "result": "Successfully opened news.ycombinator.com"
+    },
+    {
+      "id": 2,
+      "description": "Find AI-related posts",
+      "status": "in_progress",
+      "result": null
+    }
+  ],
+  "current_subtask": 2,
+  "steps": [...],
+  "llm_usage": {
+    "total_calls": 12,
+    "total_input_tokens": 45000,
+    "total_output_tokens": 3200,
+    "total_cost": 0.015
+  }
+}
+\`\`\`
+
+**Response (idle):**
+
+\`\`\`json
+{
+  "running": false,
+  "task": null,
+  "subtasks": [],
+  "steps": []
+}
+\`\`\`
+
+---
+
+## Stop Task
+
+Cancel the currently running task.
+
+\`\`\`
+POST /api/agent/stop
+\`\`\`
+
+**Response:**
+
+\`\`\`json
+{
+  "status": "ok",
+  "message": "Task cancelled"
+}
+\`\`\`
+
+---
+
+## Safety Constraints
+
+- **Browser-only**: Agent can only perform web browsing actions (no phone calls, emails, file downloads)
+- **Form guard**: Can fill forms but never submits unless the user explicitly asks
+- **Contact extraction**: Extracts and reports phone/email info instead of attempting to use them
+- **Hard limit**: \`recursion_limit=150\` as safety net against runaway execution`,
 }

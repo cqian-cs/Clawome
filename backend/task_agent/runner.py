@@ -22,8 +22,6 @@ if _TASK_AGENT_DIR not in sys.path:
     sys.path.insert(0, _TASK_AGENT_DIR)
 
 from models.task import Task
-from models.schemas import AgentState
-from workflows.main_workflow import build_main_workflow
 import run_context
 
 # ── Module-level singleton state ──────────────────────────────────────
@@ -123,7 +121,14 @@ def _validate_config():
             "config_missing",
             "LLM API Key is not configured. Please set it in Settings > Agent."
         )
-    if not settings.llm.api_base:
+
+    # Providers that do NOT need api_base (LiteLLM routes automatically)
+    NO_API_BASE = {
+        "anthropic", "google", "deepseek", "moonshot",
+        "zhipu", "volcengine", "minimax", "mistral", "groq", "xai",
+    }
+    provider = settings.llm.provider or "dashscope"
+    if provider not in NO_API_BASE and not settings.llm.api_base:
         return (
             "config_missing",
             "LLM API Base URL is not configured. Please set it in Settings > Agent."
@@ -163,9 +168,11 @@ def start_task(description):
         _running = True
         _start_time = time.time()
         run_context.reset_cancelled()  # Clear cancellation flag from previous run
+        from agent_config.settings import settings as _s
         _current_status = {
             "task_id": _current_task_id,
             "task": description,
+            "version": _s.agent.agent_version,
             "status": "starting",
             "subtasks": [],
             "steps": [],
@@ -194,7 +201,10 @@ def get_status():
             return {"status": "idle", "task_id": None}
         status = dict(_current_status)
 
-    # Read live progress from task_plan.json while running
+    # Read live progress from task_plan.json while the runner thread is still active.
+    # The runner sets _current_status to "starting" on launch; it stays "starting"
+    # until the workflow fully finishes and _run_in_thread sets "completed"/"failed".
+    # task_plan.json is updated by workflow nodes during execution.
     if status.get("status") in ("starting", "running"):
         try:
             log_path = run_context.get_log_path("task_plan.json")
@@ -203,12 +213,36 @@ def get_status():
             status["subtasks"] = live_data.get("subtasks", [])
             status["steps"] = live_data.get("steps", [])
             status["evaluations"] = live_data.get("evaluations", [])
-            # Don't let "pending" from task_plan.json override runner status
+            # Only allow "running" from task_plan.json to override the runner status.
+            # "completed"/"failed" in task_plan.json can appear *before* the workflow
+            # has truly finished (e.g. complete_subtask sets status="completed" before
+            # evaluate/final_check/summary run), so we must NOT leak those to the
+            # frontend — otherwise polling stops before final_result is available.
             live_status = live_data.get("status", "running")
-            if live_status != "pending":
-                status["status"] = live_status
+            if live_status == "running":
+                status["status"] = "running"
+            elif status["status"] == "starting":
+                # task_plan.json exists with data → workflow is active, show "running"
+                # even if task_plan.json temporarily says "completed" between subtasks
+                status["status"] = "running"
             status["updated_at"] = live_data.get("updated_at", "")
             status["current_subtask"] = live_data.get("current_subtask", 0)
+        except (FileNotFoundError, json.JSONDecodeError):
+            pass
+
+    # For completed/failed tasks, if final_result is missing (e.g. page refresh
+    # after the runner singleton was reset), try to read it from task_plan.json.
+    if status.get("status") in ("completed", "failed") and not status.get("final_result"):
+        try:
+            log_path = run_context.get_log_path("task_plan.json")
+            with open(log_path, "r", encoding="utf-8") as f:
+                live_data = json.load(f)
+            status["final_result"] = live_data.get("final_result", "")
+            # Also refresh subtasks/steps if empty (stale _current_status)
+            if not status.get("subtasks"):
+                status["subtasks"] = live_data.get("subtasks", [])
+                status["steps"] = live_data.get("steps", [])
+                status["evaluations"] = live_data.get("evaluations", [])
         except (FileNotFoundError, json.JSONDecodeError):
             pass
 
@@ -272,7 +306,6 @@ def _run_in_thread(description, task_id):
                             "input_tokens": inp,
                             "output_tokens": out,
                             "total_tokens": inp + out,
-                            "cost": round(inp / 1000 * 0.004 + out / 1000 * 0.012, 4),
                         }
                 # Read final subtask + step data
                 try:
@@ -316,14 +349,28 @@ def _run_in_thread(description, task_id):
 async def _run_workflow(description):
     """Execute the full LangGraph workflow."""
     # Reload settings right before running to pick up latest config
-    from agent_config.settings import reload_settings
+    from agent_config.settings import reload_settings, settings
     reload_settings()
 
+    version = settings.agent.agent_version
+    print(f"  [task_agent] Running workflow version: {version}")
+
     run_context.init()
+    from utils.workflow_trace import reset as _reset_trace
+    _reset_trace()
+
     from utils import detect_language
     task = Task(description=description, language=detect_language(description))
     task.status = "running"
     task.save()  # Write initial state so frontend can start tracking
+
+    if version == "v2":
+        from v2.models.schemas import AgentState
+        from v2.workflows import build_main_workflow
+    else:
+        from models.schemas import AgentState
+        from workflows.main_workflow import build_main_workflow
+
     state = AgentState(task=task)
     workflow = build_main_workflow()
     return await workflow.ainvoke(state.model_dump(), {"recursion_limit": 150})

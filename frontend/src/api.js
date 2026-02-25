@@ -256,6 +256,10 @@ export function resetConfig() {
   return api.post('/config/reset')
 }
 
+export function getModels(provider) {
+  return api.get('/models', { params: { provider } })
+}
+
 // ======================================================================
 // Compressor Scripts
 // ======================================================================

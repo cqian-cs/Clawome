@@ -531,3 +531,74 @@ Press a key combination (e.g., Ctrl+A, Command+C).
 ```
 
 **Note:** Use `Meta` for Command key on macOS, `Control` for Ctrl on Windows/Linux.
+
+---
+
+# Task Agent
+
+> Autonomous browser agent. Give it a natural language task — it plans, browses, evaluates, and returns results.
+> Currently supports Qwen (Tongyi Qianwen) only. More models coming soon.
+
+**Base URL:** `{{BASE_URL}}/api/agent`
+
+## POST /start
+
+Start a new autonomous task. The agent runs in the background.
+
+**Body:**
+```json
+{"task": "Search Hacker News for the latest AI news and summarize top 3 stories"}
+```
+
+- `task` (string, required) — Natural language task description.
+
+**Response:**
+```json
+{"status": "ok", "message": "Task started"}
+```
+
+**Errors:**
+- `409` — A task is already running (`error_code: "task_running"`)
+- `400` — Missing task description or LLM not configured
+
+---
+
+## GET /status
+
+Poll current task progress. Returns subtasks, steps, and LLM usage.
+
+**Response (running):**
+```json
+{
+  "running": true,
+  "task": "Search Hacker News for AI news...",
+  "subtasks": [
+    {"id": 1, "description": "Navigate to Hacker News", "status": "completed", "result": "..."},
+    {"id": 2, "description": "Find AI-related posts", "status": "in_progress", "result": null}
+  ],
+  "current_subtask": 2,
+  "steps": [...],
+  "llm_usage": {
+    "total_calls": 12,
+    "total_input_tokens": 45000,
+    "total_output_tokens": 3200,
+    "total_cost": 0.015
+  }
+}
+```
+
+**Response (idle):**
+```json
+{"running": false, "task": null, "subtasks": [], "steps": []}
+```
+
+---
+
+## POST /stop
+
+Cancel the currently running task.
+
+**Response:**
+```json
+{"status": "ok", "message": "Task cancelled"}
+```

@@ -635,6 +635,48 @@ def api_config_reset():
     return jsonify({"status": "ok", "config": config.get_all()})
 
 
+@app.route("/api/models", methods=["GET"])
+def api_models():
+    """Return available model names for a given LLM provider.
+
+    Query params:
+      provider  – provider key (openai, anthropic, dashscope, …)
+    """
+    provider = request.args.get("provider", "").strip()
+    if not provider:
+        return _err("provider parameter is required")
+
+    try:
+        from litellm import models_by_provider
+
+        # Lookup key mapping — our internal keys → litellm dict keys
+        PROVIDER_KEY_MAP = {
+            "google": "gemini",        # we say "google", litellm says "gemini"
+        }
+        lookup = PROVIDER_KEY_MAP.get(provider, provider)
+        raw = models_by_provider.get(lookup, set())
+
+        # Filter out non-chat models (images, audio, embedding, etc.)
+        EXCLUDE = {"dall-e", "image", "tts", "whisper", "embedding",
+                   "moderation", "audio", "realtime"}
+        filtered = [m for m in sorted(raw)
+                    if not any(x in m.lower() for x in EXCLUDE)]
+
+        # Strip provider prefix (e.g. "groq/llama-3" → "llama-3")
+        seen = set()
+        models = []
+        for m in filtered:
+            name = m.split("/", 1)[1] if "/" in m else m
+            if name not in seen:
+                seen.add(name)
+                models.append(name)
+
+        return jsonify({"status": "ok", "provider": provider, "models": models})
+    except Exception as e:
+        return jsonify({"status": "ok", "provider": provider, "models": [],
+                        "warning": str(e)})
+
+
 # ======================================================================
 # Compressor Scripts — pluggable DOM compression
 # ======================================================================

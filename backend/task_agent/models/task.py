@@ -69,6 +69,7 @@ class Task(BaseModel):
     evaluations: list[Evaluation] = Field(default_factory=list)
     supervisor_logs: list[SupervisorLog] = Field(default_factory=list)
     current_subtask: int = 0            # Step number of the currently executing subtask
+    final_result: str = ""              # Set by summary_node when task is satisfied
     created_at: str = ""
     updated_at: str = ""
 
@@ -283,6 +284,7 @@ class Task(BaseModel):
             "updated_at": self.updated_at,
             "status": self.status,
             "current_subtask": self.current_subtask,
+            "final_result": self.final_result,
             "subtasks": [
                 {"step": st.step, "goal": st.goal, "status": st.status, "result": st.result}
                 for st in self.subtasks

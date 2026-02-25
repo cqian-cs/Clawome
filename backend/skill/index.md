@@ -10,7 +10,7 @@ Base URL: {{BASE_URL}}/api
 
 Full endpoint details with request/response examples:
 
-- [Core APIs — core.md](/skill/core.md) — Navigation, DOM reading, interaction, scrolling, keyboard (21 endpoints)
+- [Core APIs — core.md](/skill/core.md) — Navigation, DOM reading, interaction, scrolling, keyboard, Task Agent (24 endpoints)
 - [Manage APIs — manage.md](/skill/manage.md) — Tabs, screenshot, file upload/download, page state, browser control (14 endpoints)
 - [Customize APIs — customize.md](/skill/customize.md) — Compressor scripts, configuration (8 endpoints)
 

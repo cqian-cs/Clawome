@@ -15,7 +15,7 @@ from langchain_core.messages import SystemMessage, HumanMessage
 
 from llm import get_llm
 from models.schemas import AgentState
-from nodes.exec_step import _collect_partial_result
+from shared.result_helpers import collect_partial_result as _collect_partial_result
 from agent_config import settings
 from utils import extract_json, tlog
 
@@ -173,7 +173,7 @@ async def supervisor_node(state: AgentState) -> dict:
     t0 = time.time()
     response = await llm.ainvoke(messages)
     d = int((time.time() - t0) * 1000)
-    state.llm_usage.add(response, node="supervisor", messages=messages)
+    state.llm_usage.add(response, node="supervisor", messages=messages, duration_ms=d)
     state.task.complete_llm_step(d, summary="Supervising execution…")
     tlog(f"[supervisor] LLM ({d}ms): {response.content[:200]}")
 

@@ -65,12 +65,17 @@ def _print_usage(response) -> dict:
     output_tokens = usage.get("completion_tokens", 0)
     total_tokens = usage.get("total_tokens", 0)
 
-    # DashScope Qwen series general pricing (RMB/yuan per 1k tokens)
-    PRICE_IN = 0.004   # input
-    PRICE_OUT = 0.012   # output
-    cost_in = input_tokens / 1000 * PRICE_IN
-    cost_out = output_tokens / 1000 * PRICE_OUT
-    cost_total = cost_in + cost_out
+    # Calculate cost via litellm pricing database
+    try:
+        import litellm
+        model = response.response_metadata.get("model_name", "") or ""
+        cost_total = litellm.completion_cost(
+            model=model,
+            prompt_tokens=input_tokens,
+            completion_tokens=output_tokens,
+        )
+    except Exception:
+        cost_total = 0.0
 
     print(f"\n{'='*60}")
     print("  Token Usage")
@@ -78,9 +83,7 @@ def _print_usage(response) -> dict:
     print(f"  input_tokens:  {input_tokens}")
     print(f"  output_tokens: {output_tokens}")
     print(f"  total_tokens:  {total_tokens}")
-    print(f"  cost_in:       ¥{cost_in:.4f}")  # ¥ = RMB/yuan (DashScope pricing)
-    print(f"  cost_out:      ¥{cost_out:.4f}")  # ¥ = RMB/yuan (DashScope pricing)
-    print(f"  cost_total:    ¥{cost_total:.4f}")  # ¥ = RMB/yuan (DashScope pricing)
+    print(f"  cost_total:    ${cost_total:.6f}")
     print(f"{'─'*60}")
 
     return {
@@ -118,7 +121,7 @@ async def main_planner_node(state: AgentState) -> dict:
 
     # Token usage
     _print_usage(response)
-    state.llm_usage.add(response, node="main_planner", messages=messages)
+    state.llm_usage.add(response, node="main_planner", messages=messages, duration_ms=d)
 
     # Parse JSON
     try:

@@ -221,6 +221,19 @@
   font-family: inherit;
 }
 
+.settings-eye-toggle {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  cursor: pointer;
+  color: #94a3b8;
+  transition: color 0.15s;
+}
+.settings-eye-toggle:hover {
+  color: #475569;
+}
+
 .settings-unit {
   font-size: 11px;
   color: #94a3b8;

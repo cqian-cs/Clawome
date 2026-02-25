@@ -21,11 +21,7 @@ class LLMUsage(BaseModel):
     input_tokens: int = 0
     output_tokens: int = 0
 
-    # DashScope Qwen pricing (RMB yuan per 1k tokens)
-    PRICE_IN: float = 0.004
-    PRICE_OUT: float = 0.012
-
-    def add(self, response, node: str = "", messages: list | None = None) -> None:
+    def add(self, response, node: str = "", messages: list | None = None, duration_ms: int = 0) -> None:
         """Extract token usage from an LLM response, accumulate it, and write to the log file."""
         self.calls += 1
         usage = response.response_metadata.get("token_usage", {})
@@ -34,9 +30,9 @@ class LLMUsage(BaseModel):
         self.input_tokens += inp
         self.output_tokens += out
 
-        self._log_to_file(node, messages, response, inp, out)
+        self._log_to_file(node, messages, response, inp, out, duration_ms)
 
-    def _log_to_file(self, node: str, messages, response, inp: int, out: int) -> None:
+    def _log_to_file(self, node: str, messages, response, inp: int, out: int, duration_ms: int = 0) -> None:
         """Append an LLM call record to the JSON log file."""
         log_path = run_context.get_log_path("llm_calls.json")
 
@@ -44,8 +40,8 @@ class LLMUsage(BaseModel):
         record = {
             "call": self.calls,
             "node": node,
+            "duration_ms": duration_ms,
             "tokens": {"input": inp, "output": out},
-            "cost": round(inp / 1000 * self.PRICE_IN + out / 1000 * self.PRICE_OUT, 4),
             "messages": [],
             "response": response.content,
         }
@@ -74,19 +70,12 @@ class LLMUsage(BaseModel):
     def total_tokens(self) -> int:
         return self.input_tokens + self.output_tokens
 
-    @property
-    def cost(self) -> float:
-        """Total cost (RMB yuan)."""
-        return (self.input_tokens / 1000 * self.PRICE_IN
-                + self.output_tokens / 1000 * self.PRICE_OUT)
-
     def summary(self) -> str:
         return (
             f"LLM Calls: {self.calls}\n"
             f"Input Tokens: {self.input_tokens}\n"
             f"Output Tokens: {self.output_tokens}\n"
-            f"Total Tokens: {self.total_tokens}\n"
-            f"Cost: ¥{self.cost:.4f}"
+            f"Total Tokens: {self.total_tokens}"
         )
 
 

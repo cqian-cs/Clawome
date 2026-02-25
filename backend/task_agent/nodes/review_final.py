@@ -138,7 +138,7 @@ async def final_check_node(state: AgentState) -> dict:
     t0 = time.time()
     response = await llm.ainvoke(messages)
     d = int((time.time() - t0) * 1000)
-    state.llm_usage.add(response, node="final_check", messages=messages)
+    state.llm_usage.add(response, node="final_check", messages=messages, duration_ms=d)
     state.task.complete_llm_step(d, summary="Reviewing results…")
     tlog(f"[final_check] LLM ({d}ms): {response.content[:200]}")
 
@@ -219,7 +219,7 @@ async def replan_node(state: AgentState) -> dict:
     t0 = time.time()
     response = await llm.ainvoke(messages)
     d = int((time.time() - t0) * 1000)
-    state.llm_usage.add(response, node="replan", messages=messages)
+    state.llm_usage.add(response, node="replan", messages=messages, duration_ms=d)
     state.task.complete_llm_step(d, summary="Replanning subtasks…")
     tlog(f"[replan] LLM ({d}ms): {response.content[:200]}")
 
@@ -281,10 +281,10 @@ async def summary_node(state: AgentState) -> dict:
     """When the task is satisfied, aggregate final results and cost statistics."""
     task = state.task
     memory = state.memory
-    task.status = "completed"
-    task.save()
-
     final_result = state.final_result or task.get_completed_summary()
+    task.status = "completed"
+    task.final_result = final_result
+    task.save()
 
     # Elapsed time calculation
     elapsed = time.time() - state.start_time if state.start_time else 0

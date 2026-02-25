@@ -8,9 +8,10 @@ import './DocsPage.css'
 
 // Group categories for sidebar navigation
 const navGroups = [
-  { label: null, ids: ['overview', 'skill-docs', 'quickstart'] },
+  { label: null, ids: ['overview', 'installation', 'skill-docs', 'quickstart'] },
   { labelKey: 'docs.customization', ids: ['compressors', 'configuration'] },
   { labelKey: 'docs.browserApis', ids: ['navigation', 'dom-reading', 'interaction', 'scrolling', 'keyboard', 'tabs', 'screenshot', 'file-download', 'page-state', 'control'] },
+  { labelKey: 'docs.taskAgentGroup', ids: ['task-agent'] },
 ]
 
 export default function DocsPage() {

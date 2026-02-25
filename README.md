@@ -65,12 +65,13 @@ Edit `.env`:
 
 ```bash
 # LLM Provider (required for Task Agent)
+# Currently supports Qwen (Tongyi Qianwen) only. More models coming soon.
 LLM_API_KEY=sk-your-api-key-here
 LLM_API_BASE=https://dashscope.aliyuncs.com/compatible-mode/v1
 LLM_MODEL=qwen3.5-plus
 ```
 
-> **Note:** The `.env` file is optional if you only use the REST API / DOM compression. You can also configure LLM credentials later via the Settings page.
+> **Note:** The current version only supports **Qwen (Tongyi Qianwen)** as the LLM provider. Support for more models (GPT, Claude, DeepSeek, etc.) is coming soon. The `.env` file is optional if you only use the REST API / DOM compression.
 
 ### 3. One-Command Start
 
@@ -214,6 +215,8 @@ POST /api/browser/dom
 
 Clawome v2.0 adds a **Task Agent** that can autonomously browse the web to complete complex tasks. Give it a natural language goal, and it will plan subtasks, execute browser actions, evaluate progress, and return structured results.
 
+> **Note:** The current version only supports **Qwen (Tongyi Qianwen)** as the LLM provider. Support for more models (GPT, Claude, DeepSeek, etc.) is coming soon.
+
 ### How It Works
 
 ```
@@ -240,7 +243,7 @@ Summary + Result            Replan → More subtasks
 
 | Method | Endpoint | Body | Description |
 |--------|----------|------|-------------|
-| POST | `/api/agent/start` | `{description}` | Start a new task |
+| POST | `/api/agent/start` | `{task}` | Start a new task |
 | GET | `/api/agent/status` | | Poll task progress (subtasks, steps, LLM usage) |
 | POST | `/api/agent/stop` | | Cancel running task |
 
@@ -252,7 +255,7 @@ Configure in the Settings UI under "Agent" tab:
 |---------|-------------|
 | API Key | LLM provider API key |
 | API Base URL | LLM provider endpoint (OpenAI-compatible) |
-| Model Name | Model to use (e.g. `gpt-4o`, `deepseek-chat`) |
+| Model Name | Model to use (currently Qwen only, e.g. `qwen3.5-plus`) |
 
 ### Workflow Nodes
 

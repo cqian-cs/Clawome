@@ -21,6 +21,74 @@ Base URL: http://localhost:5001/api
 
 错误：\`{"status": "error", "message": "..."}\``,
 
+installation: `# 安装指南
+
+## 环境要求
+
+- Python 3.10+
+- Node.js 18+
+- Git
+
+## 1. 下载
+
+\`\`\`bash
+git clone https://github.com/CodingLucasLi/Clawome.git
+cd Clawome
+\`\`\`
+
+## 2. 配置环境变量
+
+复制示例环境文件并填入你的 LLM 凭据（Task Agent 需要）：
+
+\`\`\`bash
+cp .env.example .env
+\`\`\`
+
+编辑 \`.env\`：
+
+\`\`\`bash
+# LLM 服务商（Task Agent 必需）
+# 当前版本仅支持通义千问（Qwen），后续将很快支持更多大模型
+LLM_API_KEY=sk-your-api-key-here
+LLM_API_BASE=https://dashscope.aliyuncs.com/compatible-mode/v1
+LLM_MODEL=qwen3.5-plus
+\`\`\`
+
+> **提示：** 如果你只使用 REST API / DOM 压缩功能，\`.env\` 文件是可选的。你也可以稍后通过设置页面配置 LLM 凭据。
+
+## 3. 一键启动
+
+\`\`\`bash
+./start.sh
+# 控制台：  http://localhost:5173
+# API：     http://localhost:5001
+\`\`\`
+
+\`start.sh\` 将自动完成以下操作：
+
+- 创建 Python 虚拟环境
+- 安装所有后端和前端依赖
+- 通过 Playwright 下载 Chromium
+- 加载 \`.env\` 配置
+- 启动后端和前端服务器
+
+## 手动安装（替代方案）
+
+\`\`\`bash
+# 后端
+cd backend
+python -m venv venv
+source venv/bin/activate    # Windows: venv\\Scripts\\activate
+pip install -r requirements.txt
+playwright install chromium
+python app.py               # 启动于 http://localhost:5001
+
+# 前端（另开一个终端）
+cd frontend
+npm install
+npm run dev                 # 启动于 http://localhost:5173
+\`\`\``,
+
 quickstart: `# 快速开始
 
 ## 1. 启动服务器
@@ -71,7 +139,7 @@ curl -X POST http://localhost:5001/api/browser/close
 将这些文件提供给你的 AI agent — 它们包含完整的 API 文档和请求/响应示例。agent 阅读后即可立即调用 API。
 
 - [/skill](/skill) — 入口点。快速开始、核心概念以及所有 API 详情链接
-- [/skill/core.md](/skill/core.md) — 导航、DOM 读取、交互、滚动、键盘（20 个端点）
+- [/skill/core.md](/skill/core.md) — 导航、DOM 读取、交互、滚动、键盘、智能体（24 个端点）
 - [/skill/manage.md](/skill/manage.md) — 标签页、截图、文件上传/下载、页面状态、浏览器控制（14 个端点）
 - [/skill/customize.md](/skill/customize.md) — Compressor 脚本、配置（8 个端点）
 
@@ -1344,4 +1412,159 @@ POST /api/browser/close
 \`\`\`
 
 关闭后，你可以调用 \`POST /open\` 来启动新的浏览器会话。`,
+
+'task-agent': `# 智能体 API
+
+智能体是一个 AI 驱动的自主浏览器代理。给它一个自然语言任务描述，它会自动规划子任务、执行浏览器操作、评估进度并返回结构化结果。
+
+> **提示：** 当前版本仅支持**通义千问（Qwen）**作为 LLM 服务商，后续将很快支持更多大模型。
+
+## 工作原理
+
+\`\`\`
+用户："查找 NYU Tandon 的 AI 相关项目"
+    |
+    v
+主规划器 (LLM) ─── 分解为子任务
+    |
+    v
+执行循环：
+    读取 DOM → LLM 决策动作 → 执行 → 记录
+    |                                       |
+    +── 监督器（每 5 步检查一次）
+    +── 评估器（每个子任务完成时）
+    |
+    v
+最终审查 (LLM) ─── 验证是否满足所有需求
+    |
+    v
+汇总 + 结构化结果
+\`\`\`
+
+## 工作流节点
+
+| 节点 | 角色 | 触发时机 |
+|------|------|----------|
+| \`main_planner\` | 将任务分解为编号子任务 | 启动时执行一次 |
+| \`step_exec\` | 通过 LLM 执行单个浏览器动作 | 每个步骤 |
+| \`supervisor\` | 检测执行异常（循环、卡住） | 每 5 步 |
+| \`page_doctor\` | 诊断和修复页面加载问题 | 出错时 |
+| \`evaluate\` | 评估子任务完成情况、提取发现 | 子任务完成时 |
+| \`final_check\` | 验证是否满足所有需求 | 所有子任务完成后 |
+| \`replan\` | 补充子任务（如果不完整） | 审查失败时 |
+| \`summary\` | 汇总结果和统计数据 | 成功时 |
+
+---
+
+## 启动任务
+
+启动一个新的自主任务。Agent 在后台运行。
+
+\`\`\`
+POST /api/agent/start
+\`\`\`
+
+**请求体：**
+
+\`\`\`json
+{
+  "task": "搜索 Hacker News 上最新的 AI 新闻，总结前 3 条"
+}
+\`\`\`
+
+- \`task\` (string, 必需) — 自然语言任务描述。
+
+**响应：**
+
+\`\`\`json
+{
+  "status": "ok",
+  "message": "Task started"
+}
+\`\`\`
+
+**错误：**
+
+- \`409\` — 已有任务在运行 (\`error_code: "task_running"\`)
+- \`400\` — 缺少任务描述或 LLM 未配置
+
+---
+
+## 轮询状态
+
+轮询当前任务进度。使用此端点监控子任务执行、步骤详情和 LLM 用量。
+
+\`\`\`
+GET /api/agent/status
+\`\`\`
+
+**响应（运行中）：**
+
+\`\`\`json
+{
+  "running": true,
+  "task": "搜索 Hacker News 上的 AI 新闻...",
+  "subtasks": [
+    {
+      "id": 1,
+      "description": "导航到 Hacker News",
+      "status": "completed",
+      "result": "成功打开 news.ycombinator.com"
+    },
+    {
+      "id": 2,
+      "description": "查找 AI 相关帖子",
+      "status": "in_progress",
+      "result": null
+    }
+  ],
+  "current_subtask": 2,
+  "steps": [...],
+  "llm_usage": {
+    "total_calls": 12,
+    "total_input_tokens": 45000,
+    "total_output_tokens": 3200,
+    "total_cost": 0.015
+  }
+}
+\`\`\`
+
+**响应（空闲）：**
+
+\`\`\`json
+{
+  "running": false,
+  "task": null,
+  "subtasks": [],
+  "steps": []
+}
+\`\`\`
+
+---
+
+## 停止任务
+
+取消当前正在运行的任务。
+
+\`\`\`
+POST /api/agent/stop
+\`\`\`
+
+**响应：**
+
+\`\`\`json
+{
+  "status": "ok",
+  "message": "Task cancelled"
+}
+\`\`\`
+
+---
+
+## 安全约束
+
+- **仅限浏览器操作**：Agent 只能执行网页浏览操作（不能打电话、发邮件、下载文件）
+- **表单保护**：可以填写表单但不会自动提交，除非用户明确要求
+- **联系方式提取**：提取并报告电话/邮箱信息，而非尝试使用它们
+- **硬性限制**：\`recursion_limit=150\` 作为防止失控执行的安全网`,
 }

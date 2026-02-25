@@ -20,6 +20,7 @@ _lock = threading.Lock()
 # Mapping: config key → environment variable name
 # Only keys listed here can be loaded from environment.
 _ENV_MAP = {
+    "llm_provider":     "LLM_PROVIDER",
     "llm_api_key":      "LLM_API_KEY",
     "llm_api_base":     "LLM_API_BASE",
     "llm_model":        "LLM_MODEL",
@@ -27,6 +28,7 @@ _ENV_MAP = {
     "llm_max_tokens":   "LLM_MAX_TOKENS",
     "agent_max_steps":  "AGENT_MAX_STEPS",
     "agent_start_url":  "AGENT_START_URL",
+    "agent_version":    "AGENT_VERSION",
 }
 
 # ── Default values ──
@@ -160,20 +162,24 @@ DEFAULTS = {
     "compressor_settings": {},
 
     # ── LLM / Task Agent ──
-    # API key for the LLM provider (OpenAI-compatible endpoint)
+    # LLM provider: dashscope, openai, anthropic, google, deepseek, moonshot, zhipu, volcengine, minimax, mistral, groq, xai, custom
+    "llm_provider": "dashscope",
+    # API key for the LLM provider
     "llm_api_key": "",
-    # API base URL, e.g. "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    # API base URL (required for dashscope, openai, custom; auto-routed for others)
     "llm_api_base": "",
-    # Model name, e.g. "qwen3.5-plus", "gpt-4o"
+    # Model name, e.g. "qwen3.5-plus", "gpt-4o", "claude-sonnet-4-20250514"
     "llm_model": "qwen3.5-plus",
     # Temperature (0 = deterministic)
     "llm_temperature": 0.0,
     # Max tokens per LLM response
     "llm_max_tokens": 4096,
-    # Agent max steps per subtask
+# Agent max steps per subtask
     "agent_max_steps": 15,
     # Start URL for browser agent
     "agent_start_url": "https://www.baidu.com",
+    # Agent workflow version: "v1" (flat 10-node) or "v2" (dual-dimension)
+    "agent_version": "v2",
 }
 
 # ── Runtime state ──

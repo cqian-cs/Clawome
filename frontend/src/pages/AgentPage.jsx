@@ -240,6 +240,16 @@ export default function AgentPage() {
         clearInterval(intervalRef.current)
         intervalRef.current = null
         setPolling(false)
+        // One final poll after a short delay to ensure we have the latest
+        // final_result and subtask data (guards against any race conditions).
+        if (!data.final_result) {
+          setTimeout(async () => {
+            try {
+              const r = await getAgentStatus()
+              if (r.data.final_result) setStatus(r.data)
+            } catch { /* ignore */ }
+          }, 1500)
+        }
       }
     } catch {
       // ignore poll errors
@@ -367,6 +377,9 @@ export default function AgentPage() {
             <span className={`agent-badge agent-badge-${status.status}`}>
               {status.status?.toUpperCase()}
             </span>
+            {status.version && (
+              <span className="agent-version-badge">{status.version.toUpperCase()}</span>
+            )}
             {total > 0 && (
               <span className="agent-progress-text">
                 {completed} / {total} {t('agent.subtasks')}
@@ -423,10 +436,6 @@ export default function AgentPage() {
                       {' '}{(status.llm_usage.total_tokens || 0).toLocaleString()} tokens (↑{(status.llm_usage.input_tokens || 0).toLocaleString()} ↓{(status.llm_usage.output_tokens || 0).toLocaleString()})
                     </span>
                   </span>
-                </div>
-                <div className="agent-stats-row">
-                  <span className="agent-stats-label">{t('agent.cost')}</span>
-                  <span className="agent-stats-value">¥{status.llm_usage.cost?.toFixed(4)}</span>
                 </div>
               </>)}
             </div>

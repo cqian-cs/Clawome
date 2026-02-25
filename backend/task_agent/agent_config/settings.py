@@ -24,6 +24,7 @@ def _cfg(key, fallback=None):
 @dataclass
 class LLMSettings:
     """LLM settings — reads from Browser3 config at instantiation time."""
+    provider: str = field(default_factory=lambda: _cfg("llm_provider", "dashscope"))
     model_name: str = field(default_factory=lambda: _cfg("llm_model", "qwen3.5-plus"))
     api_key: str | None = field(default_factory=lambda: _cfg("llm_api_key"))
     api_base: str | None = field(default_factory=lambda: _cfg("llm_api_base"))
@@ -46,6 +47,7 @@ class AgentSettings:
     start_url: str = field(default_factory=lambda: _cfg("agent_start_url", "https://www.baidu.com"))
     supervisor_interval: int = 5       # Step-level anomaly check every N steps
     global_check_interval: int = 20    # Task-level progress check every N steps
+    agent_version: str = field(default_factory=lambda: _cfg("agent_version", "v2"))
 
 
 @dataclass

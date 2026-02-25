@@ -180,7 +180,7 @@ async def page_doctor_node(state: AgentState) -> dict:
     t0 = time.time()
     response = await llm.ainvoke(messages)
     d = int((time.time() - t0) * 1000)
-    state.llm_usage.add(response, node="page_doctor", messages=messages)
+    state.llm_usage.add(response, node="page_doctor", messages=messages, duration_ms=d)
     state.task.complete_llm_step(d, summary="Diagnosing page…")
     tlog(f"[page_doctor] LLM ({d}ms): {response.content[:200]}")
 
