@@ -7,6 +7,15 @@ sidebar_position: 1
 
 Clawome provides **37 Browser REST APIs** for DOM compression and browser automation via Playwright, plus a **Task Agent API** for autonomous multi-step web browsing powered by LangGraph.
 
+## Install & Start
+
+```bash
+pip install clawome         # Install from PyPI
+clawome start               # Guided LLM setup + start server
+```
+
+Or use `python -m clawome start` if the `clawome` command is not found.
+
 ## Base URLs
 
 ```

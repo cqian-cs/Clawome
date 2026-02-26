@@ -144,6 +144,8 @@ curl http://localhost:5001/api/browser/dom
 
 **Prerequisites:** Python 3.10+
 
+### Install via pip (Recommended)
+
 ```bash
 pip install clawome         # Install from PyPI
 clawome start               # Guided setup + start server
@@ -155,31 +157,42 @@ If `clawome` command is not found after install, use:
 python -m clawome start     # Alternative way to run
 ```
 
-`clawome start` will walk you through LLM configuration (provider, API key, model), then start the backend and install Playwright chromium automatically.
+`clawome start` will:
+1. Walk you through LLM configuration (provider, API key, model)
+2. Install Playwright Chromium browser automatically
+3. Start the backend server with Dashboard
 
 ```
-Dashboard:  http://localhost:5173
-API:        http://localhost:5001
+Server & Dashboard:  http://localhost:5001
 ```
 
-Then run tasks from the terminal:
+Then open another terminal and run tasks:
 
 ```bash
-clawome "去Hacker News找最新AI新闻"          # Submit task & auto-poll
+clawome "Find top AI news on Hacker News"    # Submit task & auto-poll
 clawome status                               # Check progress
 clawome stop                                 # Cancel task
 clawome "complex task" --max-steps 30        # Override step limit
 clawome setup                                # Reconfigure LLM settings
 ```
 
-> You can also skip CLI setup and configure via Dashboard > Settings.
+> Configuration is saved to `~/.clawome/.env`. You can also configure via Dashboard > Settings.
+
+### Install from source
 
 <details>
-<summary><strong>Start backend or frontend separately</strong></summary>
+<summary><strong>Clone and run with start.sh</strong></summary>
 
 ```bash
-./start-backend.sh         # Only API server → http://localhost:5001
-./start-frontend.sh        # Only Dashboard  → http://localhost:5173
+git clone https://github.com/CodingLucasLi/Clawome.git
+cd Clawome
+cp .env.example .env       # Fill in your LLM API key
+./start.sh                 # Start backend + frontend
+```
+
+```
+Dashboard:  http://localhost:5173
+API:        http://localhost:5001
 ```
 
 </details>

@@ -142,43 +142,57 @@ curl http://localhost:5001/api/browser/dom
 
 ## 快速开始
 
-**前置条件：** Python 3.10+ / Node.js 18+
+**前置条件：** Python 3.10+
+
+### pip 安装（推荐）
+
+```bash
+pip install clawome         # 从 PyPI 安装
+clawome start               # 引导配置 + 启动服务
+```
+
+如果 `clawome` 命令找不到，可以用：
+
+```bash
+python -m clawome start     # 备选启动方式
+```
+
+`clawome start` 会：
+1. 引导你选择 LLM 供应商、输入 API Key、选择模型
+2. 自动安装 Playwright Chromium 浏览器
+3. 启动后端服务和控制面板
+
+```
+服务 & 控制面板：http://localhost:5001
+```
+
+然后打开另一个终端运行任务：
+
+```bash
+clawome "去Hacker News找最新AI新闻"          # 提交任务并自动轮询
+clawome status                               # 查看进度
+clawome stop                                 # 取消任务
+clawome "复杂任务" --max-steps 30            # 指定步数上限
+clawome setup                                # 重新配置 LLM
+```
+
+> 配置保存在 `~/.clawome/.env`。也可以通过控制面板 > 设置 来配置。
+
+### 从源码安装
+
+<details>
+<summary><strong>克隆并用 start.sh 运行</strong></summary>
 
 ```bash
 git clone https://github.com/CodingLucasLi/Clawome.git
 cd Clawome
 cp .env.example .env       # 填入你的 LLM API 密钥
-./start.sh                 # 搞定！
+./start.sh                 # 启动后端 + 前端
 ```
-
-首次运行会自动创建虚拟环境、安装依赖并下载 Chromium。后续运行跳过安装，即时启动。
 
 ```
 控制面板：http://localhost:5173
 API：     http://localhost:5001
-```
-
-> 如果你只使用 DOM 压缩 API，`.env` 是可选的。
-
-### CLI 工具
-
-安装 CLI 后可直接在终端运行任务：
-
-```bash
-pip install -e .           # 从项目根目录安装
-
-clawome "去Hacker News找最新AI新闻"          # 提交任务并自动轮询
-clawome status                               # 查看进度
-clawome stop                                 # 取消任务
-clawome "complex task" --max-steps 30        # 覆盖步数上限
-```
-
-<details>
-<summary><strong>单独启动后端或前端</strong></summary>
-
-```bash
-./start-backend.sh         # 仅 API 服务 → http://localhost:5001
-./start-frontend.sh        # 仅控制面板  → http://localhost:5173
 ```
 
 </details>
