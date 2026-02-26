@@ -156,6 +156,19 @@ API:        http://localhost:5001
 
 > `.env` is optional if you only use the DOM compression API.
 
+### CLI Tool
+
+Install the CLI to run tasks directly from the terminal:
+
+```bash
+pip install -e .           # Install from project root
+
+clawome "去Hacker News找最新AI新闻"          # Submit task & auto-poll
+clawome status                               # Check progress
+clawome stop                                 # Cancel task
+clawome "complex task" --max-steps 30        # Override step limit
+```
+
 <details>
 <summary><strong>Start backend or frontend separately</strong></summary>
 
