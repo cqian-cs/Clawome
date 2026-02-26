@@ -147,31 +147,28 @@ curl http://localhost:5001/api/browser/dom
 ```bash
 git clone https://github.com/CodingLucasLi/Clawome.git
 cd Clawome
-cp .env.example .env       # Fill in your LLM API key
-./start.sh                 # That's it!
+pip install -e .           # Install CLI
+clawome start              # Guided setup + start server
 ```
 
-First run automatically sets up venv, installs dependencies, and downloads Chromium. Subsequent runs skip installation and start instantly.
+`clawome start` will walk you through LLM configuration (provider, API key, model), then start the backend. First run also sets up venv, installs dependencies, and downloads Chromium.
 
 ```
 Dashboard:  http://localhost:5173
 API:        http://localhost:5001
 ```
 
-> `.env` is optional if you only use the DOM compression API.
-
-### CLI Tool
-
-Install the CLI to run tasks directly from the terminal:
+Then run tasks from the terminal:
 
 ```bash
-pip install -e .           # Install from project root
-
 clawome "去Hacker News找最新AI新闻"          # Submit task & auto-poll
 clawome status                               # Check progress
 clawome stop                                 # Cancel task
 clawome "complex task" --max-steps 30        # Override step limit
+clawome setup                                # Reconfigure LLM settings
 ```
+
+> You can also skip CLI setup and configure via Dashboard > Settings.
 
 <details>
 <summary><strong>Start backend or frontend separately</strong></summary>

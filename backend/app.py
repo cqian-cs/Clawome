@@ -5,12 +5,17 @@ Categories: navigation, DOM reading, interaction, scroll, keyboard,
             tab management, screenshot, file/download, page state, control.
 """
 
-from flask import Flask, jsonify, request, Response
+import os as _os_init
+from flask import Flask, jsonify, request, Response, send_from_directory
 from flask_cors import CORS
 from browser_manager import BrowserManager
 import config
 
-app = Flask(__name__)
+# Serve frontend dist if available (production mode)
+_FRONTEND_DIST = _os_init.path.join(_os_init.path.dirname(_os_init.path.dirname(_os_init.path.abspath(__file__))), "frontend", "dist")
+_HAS_FRONTEND = _os_init.path.isdir(_FRONTEND_DIST) and _os_init.path.isfile(_os_init.path.join(_FRONTEND_DIST, "index.html"))
+
+app = Flask(__name__, static_folder=_FRONTEND_DIST if _HAS_FRONTEND else None, static_url_path="" if _HAS_FRONTEND else None)
 CORS(app)
 
 # Task Agent API (LangGraph workflow)
@@ -766,6 +771,23 @@ def skill_file(name):
     if not name.endswith(".md") or "/" in name or "\\" in name:
         return Response("Not found", status=404, content_type="text/plain")
     return _serve_skill(name)
+
+
+# ── Frontend SPA catch-all ──────────────────────────────────────────
+# Serve index.html for any non-API, non-static route (client-side routing)
+if _HAS_FRONTEND:
+    @app.route("/", defaults={"path": ""})
+    @app.route("/<path:path>")
+    def serve_frontend(path):
+        # Let API and skill routes pass through
+        if path.startswith("api/") or path.startswith("skill"):
+            return Response("Not found", status=404)
+        # Serve static file if it exists
+        full = _os_init.path.join(_FRONTEND_DIST, path)
+        if path and _os_init.path.isfile(full):
+            return send_from_directory(_FRONTEND_DIST, path)
+        # Otherwise serve index.html (SPA routing)
+        return send_from_directory(_FRONTEND_DIST, "index.html")
 
 
 if __name__ == "__main__":
