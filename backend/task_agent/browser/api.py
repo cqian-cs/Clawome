@@ -46,7 +46,7 @@ async def close_browser(*, save_session: bool = True) -> dict:
     """
     async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
         resp = await client.post(f"{BASE_URL}/close", json={"save_session": save_session})
-        resp.raise_for_status()
+        _check_response(resp)
         return resp.json()
 
 
@@ -62,7 +62,7 @@ async def open_browser(url: str | None = None) -> dict:
     async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
         body = {"url": url} if url else {}
         resp = await client.post(f"{BASE_URL}/open", json=body)
-        resp.raise_for_status()
+        _check_response(resp)
         return resp.json()
 
 
@@ -70,7 +70,7 @@ async def get_url() -> str:
     """Get the current page URL to verify the browser is open."""
     async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
         resp = await client.get(f"{BASE_URL}/url")
-        resp.raise_for_status()
+        _check_response(resp)
         return resp.json().get("current_url", "")
 
 
@@ -83,7 +83,7 @@ async def get_dom(lite: bool = True) -> str:
     """
     async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
         resp = await client.post(f"{BASE_URL}/dom", json={"lite": lite})
-        resp.raise_for_status()
+        _check_response(resp)
         return resp.json().get("dom", "")
 
 
@@ -132,7 +132,7 @@ async def get_tabs() -> list[dict]:
     """
     async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
         resp = await client.get(f"{BASE_URL}/tabs")
-        resp.raise_for_status()
+        _check_response(resp)
         return resp.json().get("tabs", [])
 
 
@@ -140,7 +140,7 @@ async def switch_tab(tab_id: int) -> dict:
     """Switch to the specified tab. Returns {"status", "message", "dom"}."""
     async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
         resp = await client.post(f"{BASE_URL}/tabs/switch", json={"tab_id": tab_id})
-        resp.raise_for_status()
+        _check_response(resp)
         return resp.json()
 
 
@@ -149,7 +149,7 @@ async def close_tab(tab_id: int | None = None) -> list[dict]:
     async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
         body = {"tab_id": tab_id} if tab_id is not None else {}
         resp = await client.post(f"{BASE_URL}/tabs/close", json=body)
-        resp.raise_for_status()
+        _check_response(resp)
         return resp.json().get("tabs", [])
 
 

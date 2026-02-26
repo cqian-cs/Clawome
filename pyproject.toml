@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "clawome"
-version = "0.1.0"
+version = "0.1.6"
 description = "Clawome — AI browser agent. One command to run any web task."
 readme = "README.md"
 license = "Apache-2.0"
@@ -23,11 +23,11 @@ dependencies = [
 ]
 
 [project.scripts]
-clawome = "cli.clawome_cli:main"
+clawome = "clawome.clawome_cli:main"
 
 [tool.setuptools.packages.find]
-include = ["cli*", "backend*"]
+include = ["clawome*", "backend*"]
+exclude = ["backend.venv*", "backend.task_agent.logs*"]
 
 [tool.setuptools.package-data]
-backend = ["skill/*.md"]
-"*" = ["frontend/dist/**/*"]
+backend = ["skill/*.md", "static/**/*"]

@@ -11,9 +11,20 @@ from flask_cors import CORS
 from browser_manager import BrowserManager
 import config
 
-# Serve frontend dist if available (production mode)
-_FRONTEND_DIST = _os_init.path.join(_os_init.path.dirname(_os_init.path.dirname(_os_init.path.abspath(__file__))), "frontend", "dist")
-_HAS_FRONTEND = _os_init.path.isdir(_FRONTEND_DIST) and _os_init.path.isfile(_os_init.path.join(_FRONTEND_DIST, "index.html"))
+# Serve frontend — check two locations:
+#   1. Source layout:  ../frontend/dist  (when running from source)
+#   2. Packaged layout: ./static         (when installed via pip)
+_BACKEND_DIR = _os_init.path.dirname(_os_init.path.abspath(__file__))
+_FRONTEND_CANDIDATES = [
+    _os_init.path.join(_os_init.path.dirname(_BACKEND_DIR), "frontend", "dist"),
+    _os_init.path.join(_BACKEND_DIR, "static"),
+]
+_FRONTEND_DIST = None
+for _d in _FRONTEND_CANDIDATES:
+    if _os_init.path.isdir(_d) and _os_init.path.isfile(_os_init.path.join(_d, "index.html")):
+        _FRONTEND_DIST = _d
+        break
+_HAS_FRONTEND = _FRONTEND_DIST is not None
 
 app = Flask(__name__, static_folder=_FRONTEND_DIST if _HAS_FRONTEND else None, static_url_path="" if _HAS_FRONTEND else None)
 CORS(app)

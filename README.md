@@ -142,16 +142,20 @@ curl http://localhost:5001/api/browser/dom
 
 ## Quick Start
 
-**Prerequisites:** Python 3.10+ / Node.js 18+
+**Prerequisites:** Python 3.10+
 
 ```bash
-git clone https://github.com/CodingLucasLi/Clawome.git
-cd Clawome
-pip install -e .           # Install CLI
-clawome start              # Guided setup + start server
+pip install clawome         # Install from PyPI
+clawome start               # Guided setup + start server
 ```
 
-`clawome start` will walk you through LLM configuration (provider, API key, model), then start the backend. First run also sets up venv, installs dependencies, and downloads Chromium.
+If `clawome` command is not found after install, use:
+
+```bash
+python -m clawome start     # Alternative way to run
+```
+
+`clawome start` will walk you through LLM configuration (provider, API key, model), then start the backend and install Playwright chromium automatically.
 
 ```
 Dashboard:  http://localhost:5173

@@ -280,7 +280,7 @@ class BrowserManager:
         """Refresh DOM, return unified result with tree + maps + interactive + stats."""
         if _USE_JS_WALKER:
             import compressor_manager
-            dom_nodes = self._walk_dom_js()
+            dom_nodes = self._walk_dom_js() or []
             print(f"[DOM Walker] dom_nodes: {len(dom_nodes)}")
             html_len = self._page.evaluate(
                 "document.documentElement.outerHTML.length"

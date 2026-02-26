@@ -21,6 +21,12 @@ import urllib.request
 
 DEFAULT_URL = "http://localhost:5001"
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+CONFIG_DIR = os.path.join(os.path.expanduser("~"), ".clawome")
+ENV_PATH = os.path.join(CONFIG_DIR, ".env")
+
+# Bypass proxy for localhost — prevents false positives in _is_server_running
+os.environ.setdefault("no_proxy", "localhost,127.0.0.1")
+os.environ.setdefault("NO_PROXY", "localhost,127.0.0.1")
 
 # ── Providers ────────────────────────────────────────────────────────
 
@@ -68,8 +74,18 @@ def _get(base_url, path):
 
 
 def _is_server_running(base_url):
-    """Check if the backend server is reachable."""
-    return _get(base_url, "/api/browser/url") is not None
+    """Check if the Clawome backend server is reachable."""
+    try:
+        url = f"{base_url.rstrip('/')}/api/browser/status"
+        req = urllib.request.Request(url)
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            if resp.status == 200:
+                data = json.loads(resp.read())
+                # Must be a dict with expected field — not a proxy error page
+                return isinstance(data, dict) and "is_open" in data
+    except Exception:
+        pass
+    return False
 
 
 def _exit_no_server(base_url):
@@ -164,6 +180,8 @@ def _prompt_input(prompt, default="", secret=False):
 
 def _save_env(env_path, values):
     """Write config values to .env file, preserving other lines."""
+    os.makedirs(os.path.dirname(env_path), exist_ok=True)
+
     existing = {}
     other_lines = []
 
@@ -187,6 +205,19 @@ def _save_env(env_path, values):
             f.write(line)
 
 
+def _load_env(env_path):
+    """Load .env file into a dict."""
+    result = {}
+    if os.path.exists(env_path):
+        with open(env_path) as f:
+            for line in f:
+                stripped = line.strip()
+                if stripped and not stripped.startswith("#") and "=" in stripped:
+                    key, val = stripped.split("=", 1)
+                    result[key.strip()] = val.strip()
+    return result
+
+
 def cmd_setup(env_path):
     """Interactive LLM configuration wizard. Returns True if configured."""
     print("\n  LLM Configuration")
@@ -203,10 +234,8 @@ def cmd_setup(env_path):
         print("  API Key is required for Task Agent.")
         return False
 
-    # API Base (only if needed)
-    api_base = ""
-    if default_base:
-        api_base = _prompt_input("API Base URL", default=default_base)
+    # Use provider's default base URL (if any)
+    api_base = default_base or ""
 
     # Model
     model = _prompt_input("Model name", default=default_model)
@@ -234,39 +263,37 @@ def cmd_start(base_url):
         print(f"Server is already running at {base_url}")
         return
 
-    env_path = os.path.join(PROJECT_ROOT, ".env")
-    has_config = os.path.exists(env_path)
-
     print("\n  Welcome to Clawome!")
     print("  " + "=" * 40)
 
     # Check if LLM is configured
-    needs_setup = True
-    if has_config:
-        with open(env_path) as f:
-            content = f.read()
-        if "LLM_API_KEY=" in content:
-            # Check if key is actually set (not empty)
-            for line in content.splitlines():
-                if line.startswith("LLM_API_KEY=") and line.split("=", 1)[1].strip():
-                    needs_setup = False
-                    break
+    env_config = _load_env(ENV_PATH)
+    needs_setup = not env_config.get("LLM_API_KEY")
 
     if needs_setup:
         print("\n  LLM is not configured yet. Task Agent requires an LLM API key.")
         choice = _prompt_input("Configure now? [Y/n]", default="Y")
         if choice.lower() in ("y", "yes", ""):
-            cmd_setup(env_path)
+            cmd_setup(ENV_PATH)
+            env_config = _load_env(ENV_PATH)
         else:
             print("  Skipped. You can configure later in Dashboard > Settings.")
     else:
         print("\n  LLM configuration found.")
         choice = _prompt_input("Reconfigure? [y/N]", default="N")
         if choice.lower() in ("y", "yes"):
-            cmd_setup(env_path)
+            cmd_setup(ENV_PATH)
+            env_config = _load_env(ENV_PATH)
+
+    # Locate backend directory
+    backend_dir = os.path.join(PROJECT_ROOT, "backend")
+    if not os.path.isfile(os.path.join(backend_dir, "app.py")):
+        print(f"\n  Error: Backend not found at {backend_dir}")
+        print("  If installed via pip, try running from the source directory:")
+        print("    git clone <repo> && cd clawome && pip install -e .")
+        sys.exit(1)
 
     # Install Playwright chromium if needed
-    backend_dir = os.path.join(PROJECT_ROOT, "backend")
     try:
         print("\n  Checking Playwright browser...")
         subprocess.run(
@@ -280,10 +307,15 @@ def cmd_start(base_url):
 
     # Start backend server
     print("\n  Starting server...")
+    server_env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
+    # Ensure backend modules are importable (flat imports like 'from browser_manager import ...')
+    server_env["PYTHONPATH"] = backend_dir + os.pathsep + server_env.get("PYTHONPATH", "")
+    # Inject LLM config from ~/.clawome/.env into server environment
+    server_env.update(env_config)
     process = subprocess.Popen(
         [sys.executable, "app.py"],
         cwd=backend_dir,
-        env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+        env=server_env,
     )
 
     # Wait for server to be ready
@@ -445,7 +477,24 @@ def cmd_stop(base_url):
 
 # ── Entry point ──────────────────────────────────────────────────────
 
+KNOWN_COMMANDS = {"start", "setup", "run", "status", "stop", "--help", "-h", "--url"}
+
+
 def main():
+    # If the first non-flag arg is not a known command, treat it as a task
+    # e.g. clawome "go find AI news" → clawome run "go find AI news"
+    argv = sys.argv[1:]
+    first_pos = None
+    for i, arg in enumerate(argv):
+        if not arg.startswith("-"):
+            first_pos = i
+            break
+        if arg == "--url" and i + 1 < len(argv):
+            continue  # skip --url value
+
+    if first_pos is not None and argv[first_pos] not in KNOWN_COMMANDS:
+        argv.insert(first_pos, "run")
+
     parser = argparse.ArgumentParser(
         prog="clawome",
         description="Clawome CLI — run web tasks from the terminal",
@@ -480,37 +529,20 @@ def main():
     # clawome stop
     sub.add_parser("stop", help="Cancel running task")
 
-    # Allow bare `clawome "task"` without the `run` subcommand
-    args, remaining = parser.parse_known_args()
+    args = parser.parse_args(argv)
 
     if args.command == "start":
         cmd_start(args.url)
     elif args.command == "setup":
-        env_path = os.path.join(PROJECT_ROOT, ".env")
-        cmd_setup(env_path)
+        cmd_setup(ENV_PATH)
     elif args.command == "run":
         cmd_run(args.url, args.task, args.max_steps)
     elif args.command == "status":
         cmd_status(args.url)
     elif args.command == "stop":
         cmd_stop(args.url)
-    elif args.command is None:
-        if remaining:
-            # Treat first positional arg as task description
-            task = " ".join(remaining)
-            max_steps = None
-            if "--max-steps" in remaining:
-                idx = remaining.index("--max-steps")
-                if idx + 1 < len(remaining):
-                    try:
-                        max_steps = int(remaining[idx + 1])
-                    except ValueError:
-                        pass
-                    task = " ".join(r for i, r in enumerate(remaining)
-                                   if i != idx and i != idx + 1)
-            cmd_run(args.url, task, max_steps)
-        else:
-            parser.print_help()
+    else:
+        parser.print_help()
 
 
 if __name__ == "__main__":
