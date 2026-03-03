@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
-"""Clawome CLI — command-line client for the Clawome Task Agent.
+"""Clawome CLI — command-line client for the Clawome browser agent.
 
 Usage:
     clawome start                                # Start server + guided setup
     clawome "Go to Hacker News and find top 3 AI stories"
     clawome status
     clawome stop
-    clawome "complex task" --max-steps 30
 """
 
 import argparse
@@ -97,45 +96,30 @@ def _exit_no_server(base_url):
 
 # ── Display helpers ──────────────────────────────────────────────────
 
-def _print_status(data, prev_subtasks):
-    """Print incremental status updates. Returns current subtask list."""
-    subtasks = data.get("subtasks", [])
+def _print_message(msg):
+    """Print a single chat message to the terminal."""
+    role = msg.get("role", "")
+    mtype = msg.get("type", "text")
+    content = msg.get("content", "")
 
-    for st in subtasks:
-        step = st.get("step", "?")
-        goal = st.get("goal", st.get("description", ""))
-        status = st.get("status", "")
-        key = (step, goal)
+    if role == "user":
+        return  # We already printed user input
+    if not content or not content.strip():
+        return
 
-        prev = prev_subtasks.get(key)
-        if prev == status:
-            continue
-        prev_subtasks[key] = status
-
-        if status == "completed":
-            result = st.get("result", "")
-            print(f"  [Step {step}] {goal} ... done")
-            if result:
-                for line in result.strip().split("\n")[:3]:
-                    print(f"    {line}")
-        elif status == "running":
-            print(f"  [Step {step}] {goal} ... running")
-
-    return prev_subtasks
-
-
-def _format_usage(usage):
-    """Format LLM usage stats."""
-    if not usage:
-        return ""
-    calls = usage.get("calls", 0)
-    tokens = usage.get("total_tokens", 0)
-    parts = []
-    if calls:
-        parts.append(f"{calls} LLM calls")
-    if tokens:
-        parts.append(f"{tokens:,} tokens")
-    return ", ".join(parts)
+    if mtype == "thinking":
+        # Dim thinking text
+        print(f"\033[2m  (thinking) {content.strip()}\033[0m")
+    elif mtype == "error":
+        print(f"\033[31m  Error: {content}\033[0m")
+    elif mtype == "task_progress":
+        print(f"  [task] {content.strip()}")
+    elif mtype == "task_result":
+        print(f"\n  [result] {content.strip()}")
+    elif role == "agent":
+        print(f"\n  {content.strip()}")
+    elif role == "system":
+        print(f"  {content.strip()}")
 
 
 # ── Interactive setup ────────────────────────────────────────────────
@@ -352,125 +336,107 @@ def cmd_start(base_url):
     sys.exit(1)
 
 
-def cmd_run(base_url, task, max_steps=None):
-    """Submit a task and poll until completion."""
+def cmd_run(base_url, task):
+    """Send a message to the chat agent and stream responses."""
     if not _is_server_running(base_url):
         _exit_no_server(base_url)
 
-    body = {"task": task}
-    if max_steps:
-        body["max_steps"] = max_steps
+    # Reset session for a clean run
+    _post(base_url, "/api/chat/reset")
 
-    result = _post(base_url, "/api/agent/start", body)
-
-    if result.get("error_code") == "task_running":
-        print(f"A task is already running (id: {result.get('task_id')})")
-        print("Use 'clawome status' to check progress or 'clawome stop' to cancel.")
+    # Send the message
+    result = _post(base_url, "/api/chat/send", {"message": task})
+    if not result:
+        print("Error: Failed to send message.")
         sys.exit(1)
 
     if result.get("status") == "error":
+        if result.get("error_code") == "busy":
+            print("Agent is busy processing another message.")
+            print("Use 'clawome stop' to cancel, or 'clawome status' to check.")
+            sys.exit(1)
         print(f"Error: {result.get('message', 'Unknown error')}")
         sys.exit(1)
 
-    task_id = result.get("task_id", "?")
-    print(f"Task started (id: {task_id})\n")
+    print(f"  > {task}\n")
 
-    # Auto-cancel on Ctrl+C
+    # Auto-stop on Ctrl+C
     def _on_interrupt(sig, frame):
-        print("\n\nCancelling task...")
-        _post(base_url, "/api/agent/stop")
-        print("Task cancelled.")
+        print("\n\nStopping...")
+        _post(base_url, "/api/chat/stop")
+        print("Stopped.")
         sys.exit(130)
 
     signal.signal(signal.SIGINT, _on_interrupt)
 
-    # Poll loop
-    prev_subtasks = {}
+    # Poll for responses
+    seen = 0  # message index cursor
     while True:
-        time.sleep(2)
-        data = _get(base_url, "/api/agent/status")
+        time.sleep(1)
+        data = _get(base_url, f"/api/chat/status?since={seen}")
         if data is None:
             print("\nLost connection to server.")
             sys.exit(1)
 
-        status = data.get("status", "idle")
-        prev_subtasks = _print_status(data, prev_subtasks)
+        messages = data.get("messages", [])
+        for msg in messages:
+            _print_message(msg)
+        seen += len(messages)
 
-        if status == "completed":
-            elapsed = data.get("elapsed_seconds", 0)
-            usage_str = _format_usage(data.get("llm_usage"))
-            summary = f"Task completed ({elapsed}s"
-            if usage_str:
-                summary += f", {usage_str}"
-            summary += ")"
-            print(f"\n{summary}\n")
-
-            final = data.get("final_result", "")
-            if final:
-                print(final)
+        status = data.get("status", "ready")
+        if status != "processing":
             break
 
-        elif status == "failed":
-            print(f"\nTask failed: {data.get('error', 'Unknown error')}")
-            sys.exit(1)
-
-        elif status == "cancelled":
-            print("\nTask cancelled.")
-            break
-
-        elif status == "idle":
-            print("No task running.")
-            break
+    print()
 
 
 def cmd_status(base_url):
-    """Show current task status."""
+    """Show current chat session status."""
     if not _is_server_running(base_url):
         _exit_no_server(base_url)
 
-    data = _get(base_url, "/api/agent/status")
-    status = data.get("status", "idle")
+    data = _get(base_url, "/api/chat/status?since=0")
+    if data is None:
+        print("Error: Cannot get status.")
+        sys.exit(1)
 
-    if status == "idle":
-        print("No task running.")
+    status = data.get("status", "ready")
+    session_id = data.get("session_id", "none")
+    messages = data.get("messages", [])
+
+    if not messages:
+        print("No active conversation.")
         return
 
-    task_desc = data.get("task", "")
-    elapsed = data.get("elapsed_seconds", 0)
-    print(f"Task: {task_desc}")
-    print(f"Status: {status} ({elapsed}s elapsed)")
+    print(f"Session: {session_id}")
+    print(f"Status:  {status}")
+    print(f"Messages: {len(messages)}")
 
-    subtasks = data.get("subtasks", [])
-    if subtasks:
+    # Show last few messages
+    recent = messages[-5:]
+    if recent:
         print()
-        for st in subtasks:
-            step = st.get("step", "?")
-            goal = st.get("goal", st.get("description", ""))
-            s = st.get("status", "")
-            mark = {"completed": "+", "running": ">", "pending": " "}.get(s, " ")
-            print(f"  [{mark}] Step {step}: {goal}")
-
-    if status == "completed":
-        final = data.get("final_result", "")
-        if final:
-            print(f"\nResult:\n{final}")
-
-    usage_str = _format_usage(data.get("llm_usage"))
-    if usage_str:
-        print(f"\nLLM usage: {usage_str}")
+        for msg in recent:
+            role = msg.get("role", "?")
+            content = msg.get("content", "").strip()
+            if not content:
+                continue
+            preview = content[:120] + ("..." if len(content) > 120 else "")
+            print(f"  [{role}] {preview}")
 
 
 def cmd_stop(base_url):
-    """Cancel the running task."""
+    """Stop the chat agent."""
     if not _is_server_running(base_url):
         _exit_no_server(base_url)
 
-    result = _post(base_url, "/api/agent/stop")
+    result = _post(base_url, "/api/chat/stop")
+    if not result:
+        print("Error: Cannot connect.")
+        sys.exit(1)
     status = result.get("status", "")
-    if status == "cancelled":
-        print("Task cancelled.")
-    elif status == "no_task_running":
-        print("No task running.")
+    if status == "stopped":
+        print("Stopped.")
     else:
         print(f"Response: {result}")
 
@@ -519,9 +485,8 @@ def main():
     sub.add_parser("setup", help="Configure LLM settings")
 
     # clawome run "task"
-    run_p = sub.add_parser("run", help="Submit a new task")
+    run_p = sub.add_parser("run", help="Send a task to the agent")
     run_p.add_argument("task", help="Task description in natural language")
-    run_p.add_argument("--max-steps", type=int, help="Override step limit (default: 15)")
 
     # clawome status
     sub.add_parser("status", help="Show current task status")
@@ -536,7 +501,7 @@ def main():
     elif args.command == "setup":
         cmd_setup(ENV_PATH)
     elif args.command == "run":
-        cmd_run(args.url, args.task, args.max_steps)
+        cmd_run(args.url, args.task)
     elif args.command == "status":
         cmd_status(args.url)
     elif args.command == "stop":
