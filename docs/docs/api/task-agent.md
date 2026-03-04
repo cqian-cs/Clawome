@@ -2,161 +2,235 @@
 sidebar_position: 11
 ---
 
-# Task Agent
+# Chat Agent
 
-The Task Agent API provides autonomous multi-step web browsing. Given a natural language task description, the agent decomposes it into subtasks, executes browser actions via LLM decisions, evaluates progress, and returns structured results.
+The Chat Agent API provides a conversational interface to Clawome's browser agent. Send natural language messages — the agent (Beanie) decides whether to answer directly, use browser tools, or launch an autonomous multi-step task.
 
 ## Base URL
 
 ```
-http://localhost:5001/api/agent
+http://localhost:5001/api/chat
 ```
 
 ## Prerequisites
 
-Configure the agent in Settings > Agent:
+Configure the LLM in Settings or via `clawome setup`:
+- **Provider**: OpenAI, Anthropic, Google, DeepSeek, DashScope, etc.
 - **API Key**: Your LLM provider API key
-- **API Base URL**: OpenAI-compatible endpoint
-- **Model Name**: e.g. `gpt-4o`, `deepseek-chat`
+- **Model**: e.g. `gpt-4o`, `claude-sonnet-4-20250514`, `qwen-plus`
 
 ## Endpoints
 
-### Start Task
+### Send Message
 
-Start a new autonomous task in the background.
+Send a user message. Processing starts in the background.
 
 ```
-POST /api/agent/start
+POST /api/chat/send
 ```
 
 **Request Body:**
 
 ```json
 {
-  "description": "Find AI-related graduate programs at NYU Tandon School of Engineering",
-  "max_steps": 30
+  "message": "Find AI-related graduate programs at NYU Tandon School of Engineering"
 }
 ```
-
-**Parameters:**
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `task` or `description` | string | Yes | Natural language task description |
-| `max_steps` | number | No | Override step limit for this task (default: 15) |
 
 **Response:**
 
 ```json
 {
-  "task_id": "1",
-  "status": "started"
+  "status": "ok",
+  "session_id": "session_a1b2c3d4"
 }
 ```
 
 **Error responses:**
 
 ```json
-{"error": "LLM API Key is not configured...", "error_code": "config_missing"}
-{"error": "A task is already running", "error_code": "task_running", "task_id": "1"}
+{"status": "error", "error_code": "busy", "message": "Agent is busy processing"}
+{"status": "error", "error_code": "bad_request", "message": "message content is required"}
 ```
+
+If a task is actively running, the message is injected into the running task instead (useful for giving additional instructions mid-task).
 
 ### Poll Status
 
-Get current task progress. Call every 2 seconds while status is `starting` or `running`.
+Get messages since a given index. Poll every 1-2 seconds while status is `processing`.
 
 ```
-GET /api/agent/status
-```
-
-**Response (running):**
-
-```json
-{
-  "task_id": "1",
-  "task": "Find AI-related graduate programs...",
-  "status": "running",
-  "subtasks": [
-    {"step": 1, "goal": "Visit NYU Tandon website...", "status": "completed", "result": "..."},
-    {"step": 2, "goal": "Extract program list...", "status": "running"}
-  ],
-  "steps": [
-    {"node": "step_exec", "status": "completed", "summary": "..."}
-  ],
-  "elapsed_seconds": 45,
-  "llm_usage": {
-    "calls": 12,
-    "input_tokens": 25000,
-    "output_tokens": 3000,
-    "total_tokens": 28000,
-    "cost": 0.0156
-  }
-}
-```
-
-**Response (completed):**
-
-```json
-{
-  "status": "completed",
-  "final_result": "NYU Tandon offers these AI-related programs: ...",
-  "subtasks": [...],
-  "llm_usage": {...}
-}
-```
-
-**Status values:** `idle`, `starting`, `running`, `completed`, `failed`, `cancelled`
-
-### Stop Task
-
-Cancel the running task. Terminates the LangGraph workflow via asyncio task cancellation.
-
-```
-POST /api/agent/stop
+GET /api/chat/status?since=0
 ```
 
 **Response:**
 
 ```json
-{"status": "cancelled"}
+{
+  "status": "processing",
+  "session_id": "session_a1b2c3d4",
+  "message_count": 5,
+  "messages": [
+    {
+      "id": "user_1709500000",
+      "role": "user",
+      "type": "text",
+      "content": "Find AI programs at NYU Tandon",
+      "timestamp": 1709500000.0
+    },
+    {
+      "id": "ai_1709500001",
+      "role": "agent",
+      "type": "result",
+      "content": "I found 5 AI-related programs at NYU Tandon...",
+      "timestamp": 1709500001.0
+    }
+  ]
+}
 ```
 
-## Workflow Architecture
+**Message types:**
+
+| Type | Description |
+|------|-------------|
+| `text` | Regular text message |
+| `result` | Agent's final response |
+| `thinking` | Agent's reasoning (before tool calls) |
+| `error` | Error message |
+| `task_progress` | Task execution progress update |
+| `task_result` | Completed task result summary |
+
+**Status values:** `processing` (agent is working) → `ready` (waiting for input)
+
+### SSE Stream
+
+Real-time event stream (primary method for the web dashboard).
 
 ```
-browser_reset → main_planner → init_subtask → page_doctor → step_exec ←──┐
-                    ^                                  |          |        |
-                    |                             step_router     |        |
-                    |                            /    |    \      |        |
-                    |                     continue  done  page_fix        |
-                    |                        |       |      |             |
-                    |                        └───────┤   page_doctor      |
-                    |                          evaluate   supervisor      |
-                    |                            |                        |
-                    |                      subtask_router                 |
-                    |                       /         \                   |
-                    +── next          all_done                            |
-                                        |                                |
-                                   final_check                           |
-                                    /       \                             |
-                              satisfied  not_satisfied                    |
-                                 |            |                           |
-                              summary      replan ── init_subtask ───────┘
-                                 |
-                                END
+GET /api/chat/stream
+```
+
+Events: `init`, `token`, `msg_start`, `msg_type`, `tool_start`, `tool_end`, `done`, `agent_error`, `task_progress`, `task_result_summary`, `reset`, `session_restored`
+
+### Stop Processing
+
+Cancel current processing and any running task.
+
+```
+POST /api/chat/stop
+```
+
+**Response:**
+
+```json
+{"status": "stopped"}
+```
+
+### Reset Session
+
+Save current session and start a fresh conversation.
+
+```
+POST /api/chat/reset
+```
+
+**Response:**
+
+```json
+{"status": "ok"}
+```
+
+### List Sessions
+
+```
+GET /api/chat/sessions
+```
+
+**Response:**
+
+```json
+{
+  "sessions": [
+    {
+      "id": "session_a1b2c3d4",
+      "preview": "Find AI programs at NYU...",
+      "message_count": 8,
+      "created_at": 1709500000.0,
+      "updated_at": 1709500100.0
+    }
+  ],
+  "current_id": "session_a1b2c3d4"
+}
+```
+
+### Restore Session
+
+```
+POST /api/chat/sessions/restore
+```
+
+**Request Body:**
+
+```json
+{"session_id": "session_a1b2c3d4"}
+```
+
+### Delete Session
+
+```
+POST /api/chat/sessions/delete
+```
+
+**Request Body:**
+
+```json
+{"session_id": "session_a1b2c3d4"}
+```
+
+## Architecture
+
+Clawome uses a two-layer agent architecture:
+
+```
+User Message
+    │
+    ▼
+Beanie (Chat Agent — LangGraph ReAct)
+    │
+    ├── Simple questions → Direct LLM response
+    │
+    ├── Browser actions → Built-in tools (navigate, click, read DOM, screenshot)
+    │
+    └── Complex tasks → create_task() → Runner (Task Engine)
+                                            │
+                                            ├── main_planner: breaks into subtasks
+                                            ├── perceive: reads page state
+                                            ├── pre_planner_guard: checks for obstacles
+                                            │     ├── CAPTCHA → auto-redirect search engine
+                                            │     ├── Cookie popup → JS injection dismiss
+                                            │     ├── Loop detected → exit to replanner
+                                            │     └── Pass → continue
+                                            ├── step_planner: LLM decides next action
+                                            ├── execute_action: browser interaction
+                                            ├── sense_result: evaluate outcome
+                                            └── flow_check: continue / replan / done
+                                            │
+                                            └── Results → back to Beanie → User
+
+Watchdog (monitors Runner):
+    - Subtask timeout (3 min) → injects reminder
+    - Stall detection → nudges agent
+    - Consecutive failures → suggests alternatives
+    - Global timeout (5 min) → forces completion
 ```
 
 ## Error Codes
 
 | Code | Description |
 |------|-------------|
-| `config_missing` | API key or base URL not configured |
-| `task_running` | A task is already in progress |
+| `bad_request` | Missing or invalid message content |
+| `busy` | Agent is already processing a message |
+| `config_missing` | API key not configured |
 | `auth_error` | LLM API authentication failed |
-| `connection_error` | Cannot connect to LLM provider |
 | `rate_limit` | LLM API rate limit exceeded |
-| `model_error` | Model not found at provider |
-| `timeout_error` | Request timed out |
 | `browser_error` | Browser/Playwright error |
-| `cancelled` | Task cancelled by user |
-| `internal_error` | Unexpected error |

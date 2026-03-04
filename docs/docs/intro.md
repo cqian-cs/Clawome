@@ -5,7 +5,7 @@ sidebar_position: 1
 
 # Clawome API Reference
 
-Clawome provides **37 Browser REST APIs** for DOM compression and browser automation via Playwright, plus a **Task Agent API** for autonomous multi-step web browsing powered by LangGraph.
+Clawome provides **37 Browser REST APIs** for DOM compression and browser automation via Playwright, plus a **Chat Agent API** for conversational AI browsing powered by LangGraph.
 
 ## Install & Start
 
@@ -20,7 +20,7 @@ Or use `python -m clawome start` if the `clawome` command is not found.
 
 ```
 Browser API:  http://localhost:5001/api/browser
-Agent API:    http://localhost:5001/api/agent
+Chat API:     http://localhost:5001/api/chat
 ```
 
 ## Concepts
@@ -69,15 +69,19 @@ Error responses return:
 | 32-36 | **Page State** | cookies, set_cookie, viewport, wait, wait_for | Page state & timing |
 | 37 | **Control** | close | Browser lifecycle |
 
-### Task Agent APIs (`/api/agent`)
+### Chat Agent APIs (`/api/chat`)
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/api/agent/start` | Start autonomous task (body: `{description}`) |
-| GET | `/api/agent/status` | Poll task progress, subtasks, steps, LLM usage |
-| POST | `/api/agent/stop` | Cancel running task |
+| POST | `/api/chat/send` | Send a message (body: `{message}`) |
+| GET | `/api/chat/status?since=N` | Poll messages incrementally |
+| POST | `/api/chat/stop` | Stop current processing |
+| POST | `/api/chat/reset` | Start a new conversation |
+| GET | `/api/chat/sessions` | List saved sessions |
+| POST | `/api/chat/sessions/restore` | Restore a previous session |
+| POST | `/api/chat/sessions/delete` | Delete a saved session |
 
-See [Task Agent](./api/task-agent.md) for full documentation.
+See [Chat Agent](./api/task-agent.md) for full documentation.
 
 ## Typical Agent Workflow
 

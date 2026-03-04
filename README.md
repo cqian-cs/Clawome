@@ -9,106 +9,199 @@
 <h1 align="center">Clawome</h1>
 
 <p align="center">
-  <strong>One API call. Any web task. Done.</strong><br/>
-  Give your AI agent a natural language goal — Clawome plans, browses, and returns structured results.
+  <strong>Open-source AI browser agent. Tell it what you want — it browses the web and brings back results.</strong>
 </p>
 
 <p align="center">
-  <a href="#task-agent-api">Task Agent API</a> &bull;
+  <a href="https://pypi.org/project/clawome/"><img src="https://img.shields.io/pypi/v/clawome?color=blue" alt="PyPI" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-green" alt="License" /></a>
+  <img src="https://img.shields.io/badge/Python-3.10+-blue" alt="Python" />
+</p>
+
+<p align="center">
   <a href="#quick-start">Quick Start</a> &bull;
+  <a href="#how-it-works">How It Works</a> &bull;
+  <a href="#chat-api">Chat API</a> &bull;
   <a href="#dom-compression">DOM Compression</a> &bull;
-  <a href="#benchmarks">Benchmarks</a> &bull;
   <a href="#roadmap">Roadmap</a>
 </p>
 
 ---
 
-## Task Agent API
-
-One POST request. Clawome handles the rest — planning subtasks, controlling the browser, reading pages, and returning results.
+## What Can It Do?
 
 ```bash
-curl -X POST http://localhost:5001/api/agent/start \
+clawome "Find the top 3 AI stories on Hacker News today"
+```
+
+```
+  > Find the top 3 AI stories on Hacker News today
+
+  I'll browse Hacker News and find the top AI stories for you.
+
+  [task] Opening https://news.ycombinator.com ...
+  [task] Scanning front page for AI-related stories ...
+  [task] Extracting titles, scores, and links ...
+
+  [result] Here are today's top 3 AI stories on Hacker News:
+  1. "GPT-5 benchmark results leaked" — 842 points
+  2. "Open-source vision model beats proprietary ones" — 631 points
+  3. "Show HN: AI browser agent that actually works" — 529 points
+```
+
+No browser extensions. No complex setup. Just describe what you want in plain language.
+
+---
+
+## Quick Start
+
+**Prerequisites:** Python 3.10+
+
+### Install & Run
+
+```bash
+pip install clawome
+clawome start
+```
+
+This walks you through LLM setup (pick a provider, enter API key), installs Chromium, and starts the server.
+
+```
+Server & Dashboard:  http://localhost:5001
+```
+
+### Run Tasks from Terminal
+
+```bash
+clawome "Find AI graduate programs at Stanford"
+clawome "Compare iPhone 16 Pro vs Samsung S25 Ultra specs"
+clawome "What's the weather in Tokyo this weekend?"
+clawome status          # Check progress
+clawome stop            # Cancel
+```
+
+### Or Use the Web Dashboard
+
+Open `http://localhost:5001` — chat with Beanie, the built-in AI assistant. It understands context, handles follow-ups, and delegates complex browsing tasks automatically.
+
+<details>
+<summary><strong>Install from source</strong></summary>
+
+```bash
+git clone https://github.com/CodingLucasLi/Clawome.git
+cd Clawome
+cp .env.example .env       # Fill in your LLM API key
+./start.sh                 # Start backend + frontend dev server
+```
+
+```
+Dashboard:  http://localhost:5173
+API:        http://localhost:5001
+```
+
+Or manually:
+
+```bash
+cd backend && python -m venv venv && source venv/bin/activate
+pip install -r requirements.txt && playwright install chromium
+python app.py               # http://localhost:5001
+
+cd frontend && npm install && npm run dev   # http://localhost:5173
+```
+
+</details>
+
+---
+
+## How It Works
+
+Clawome uses a **two-layer agent architecture**:
+
+```
+You ──→ Beanie (Chat Agent) ──→ Runner (Task Engine) ──→ Browser
+         │                        │
+         │ Understands context    │ Plans subtasks
+         │ Calls browser tools   │ Perceive → Plan → Act → Sense
+         │ Manages sessions      │ Guard nodes (CAPTCHA, cookies, loops)
+         │ Delegates complex     │ Anomaly detection & recovery
+         │ tasks to Runner       │ Reports back to Beanie
+         │                        │
+         └── Watchdog ────────────┘ (monitors progress, intervenes if stuck)
+```
+
+**Beanie** handles simple questions and browser actions directly. For complex multi-step tasks, it delegates to the **Runner** — a LangGraph state machine that autonomously plans, browses, and extracts information.
+
+### Key Features
+
+| Feature | Description |
+|---------|-------------|
+| **Natural language** | Just describe what you want |
+| **Chat interface** | Context-aware conversations with follow-ups |
+| **Smart execution** | Perceive → Plan → Act → Sense loop with retry |
+| **Guard nodes** | Auto-handles CAPTCHAs, cookie popups, blocked pages |
+| **100:1 DOM compression** | 300K HTML → 3K tokens for efficient LLM processing |
+| **12+ LLM providers** | OpenAI, Anthropic, Google, DeepSeek, Qwen, and more |
+| **Bilingual UI** | Full Chinese/English support |
+| **Session persistence** | Resume conversations across restarts |
+
+---
+
+## Chat API
+
+Send a message, poll for the response. Beanie decides whether to answer directly or launch a browsing task.
+
+```bash
+# Send a message
+curl -X POST http://localhost:5001/api/chat/send \
   -H "Content-Type: application/json" \
-  -d '{"description": "Find AI-related graduate programs at NYU Tandon School of Engineering"}'
+  -d '{"message": "Find AI graduate programs at NYU Tandon"}'
+
+# Poll for response
+curl http://localhost:5001/api/chat/status?since=0
+
+# Stop processing
+curl -X POST http://localhost:5001/api/chat/stop
+
+# Start fresh
+curl -X POST http://localhost:5001/api/chat/reset
 ```
 
-Poll progress:
-
-```bash
-curl http://localhost:5001/api/agent/status
-```
+**Response format:**
 
 ```json
 {
-  "status": "completed",
-  "final_result": "NYU Tandon offers these AI-related programs: ...",
-  "subtasks": [
-    {"step": 1, "goal": "Visit NYU Tandon website", "status": "completed"},
-    {"step": 2, "goal": "Extract program list", "status": "completed"}
-  ],
-  "llm_usage": {"calls": 12, "input_tokens": 25000, "total_tokens": 28000}
+  "status": "processing",
+  "session_id": "session_a1b2c3d4",
+  "messages": [
+    {"role": "user", "type": "text", "content": "Find AI programs..."},
+    {"role": "agent", "type": "result", "content": "I found 5 programs..."}
+  ]
 }
-```
-
-Cancel if needed:
-
-```bash
-curl -X POST http://localhost:5001/api/agent/stop
 ```
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/api/agent/start` | Submit a task (natural language) |
-| GET | `/api/agent/status` | Poll progress, subtasks, and results |
-| POST | `/api/agent/stop` | Cancel running task |
+| POST | `/api/chat/send` | Send a message |
+| GET | `/api/chat/status?since=N` | Poll messages (incremental) |
+| POST | `/api/chat/stop` | Stop current processing |
+| POST | `/api/chat/reset` | Start a new session |
+| GET | `/api/chat/sessions` | List saved sessions |
+| POST | `/api/chat/sessions/restore` | Restore a session |
+| POST | `/api/chat/sessions/delete` | Delete a session |
 
-**Start parameters:**
+**Status values:** `processing` (agent is working) → `ready` (waiting for input)
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `task` | string | Task description (required) |
-| `max_steps` | number | Override step limit for this task (default: 15) |
+### Tips for Better Results
 
-**Status values:** `idle` → `starting` → `running` → `completed` / `failed` / `cancelled`
-
-### Tips for Writing Tasks
-
-```
-Bad:  "打开深圳大学网站看看有什么内容"
-Good: "打开 https://www.szu.edu.cn 首页，提取导航栏、最新3条新闻和通知公告"
-```
-
-- **Give a URL** — avoid letting the agent guess where to go
-- **Specify what to extract** — "top 5 news" is better than "all news"
-- **Complex tasks? Increase steps** — `"max_steps": 30` for multi-page tasks
-- **Or split into smaller tasks** — each task focused on one page or one goal
-
-### How It Works
-
-```
-Your API call → Task Agent → Plan subtasks → Execute browser actions → Return results
-                                  ↑                                        |
-                                  └── evaluate & replan if needed ─────────┘
-```
-
-The agent uses a LangGraph state machine internally: perceive page → plan next step → execute action → sense result → repeat until done.
-
-### Features
-- **Natural language tasks** — Describe what you want in plain language
-- **Multi-step planning** — Automatically breaks complex tasks into subtasks
-- **Smart execution** — Perceive → Plan → Act → Sense loop with retry and anomaly detection
-- **Markdown results** — Final results formatted in Markdown with structured data
-- **12+ LLM providers** — OpenAI, Anthropic, Google, DeepSeek, DashScope, Moonshot, Zhipu, Mistral, Groq, xAI, and more
-- **Safety constraints** — Browser-only actions, hard step limits
+- **Give a URL** when possible — `"Go to https://example.com and find..."` avoids guesswork
+- **Be specific** — `"top 5 news headlines"` beats `"what's on the page"`
+- **Ask follow-ups** — Beanie remembers context within a session
 
 ---
 
 ## DOM Compression
 
-Under the hood, the Task Agent sees web pages through Clawome's DOM compressor — turning 300K tokens of raw HTML into ~3K tokens of clean, structured trees.
-
-**You can also use this directly** as a standalone API for your own agents:
+Clawome's DOM compressor turns raw HTML into concise, LLM-friendly trees. Use it standalone for your own agents:
 
 ```bash
 # Open a page
@@ -128,99 +221,22 @@ curl http://localhost:5001/api/browser/dom
 [3] a(href): Gmail
 ```
 
-- **100:1 compression ratio** on typical web pages
+| Page | Raw HTML | Compressed | Savings |
+|------|--------:|-----------:|--------:|
+| Google Homepage | 51K | 238 | 99.5% |
+| Google Search | 298K | 2,866 | 99.0% |
+| Wikipedia Article | 225K | 40K | 82.1% |
+| Baidu Homepage | 192K | 457 | 99.8% |
+
+Features:
+- **100:1 compression** on typical pages
 - Preserves visible text, interactive elements, and semantic structure
-- Hierarchical node IDs (e.g., `1.2.3`) for precise element targeting
-- Site-specific optimizers for Google, Wikipedia, Stack Overflow, YouTube, etc.
-- Lite mode for even more aggressive token savings
-
-### Dashboard
-- **Browser Playground** — Interactive DOM viewer and browser control
-- **Agent UI** — Task input, real-time progress tracking, collapsible step details
-- **Settings** — LLM provider config, browser options, compression settings
-- **API Docs** — Built-in documentation with Chinese/English support
-
-## Quick Start
-
-**Prerequisites:** Python 3.10+
-
-### Install via pip (Recommended)
-
-```bash
-pip install clawome         # Install from PyPI
-clawome start               # Guided setup + start server
-```
-
-If `clawome` command is not found after install, use:
-
-```bash
-python -m clawome start     # Alternative way to run
-```
-
-`clawome start` will:
-1. Walk you through LLM configuration (provider, API key, model)
-2. Install Playwright Chromium browser automatically
-3. Start the backend server with Dashboard
-
-```
-Server & Dashboard:  http://localhost:5001
-```
-
-Then open another terminal and run tasks:
-
-```bash
-clawome "Find top AI news on Hacker News"    # Submit task & auto-poll
-clawome status                               # Check progress
-clawome stop                                 # Cancel task
-clawome "complex task" --max-steps 30        # Override step limit
-clawome setup                                # Reconfigure LLM settings
-```
-
-> Configuration is saved to `~/.clawome/.env`. You can also configure via Dashboard > Settings.
-
-### Install from source
+- Hierarchical node IDs (`1.2.3`) for precise element targeting
+- Site-specific optimizers (Google, Wikipedia, Stack Overflow, YouTube, etc.)
+- Custom compressor scripts via Dashboard
 
 <details>
-<summary><strong>Clone and run with start.sh</strong></summary>
-
-```bash
-git clone https://github.com/CodingLucasLi/Clawome.git
-cd Clawome
-cp .env.example .env       # Fill in your LLM API key
-./start.sh                 # Start backend + frontend
-```
-
-```
-Dashboard:  http://localhost:5173
-API:        http://localhost:5001
-```
-
-</details>
-
-<details>
-<summary><strong>Manual setup</strong></summary>
-
-```bash
-# Backend
-cd backend
-python -m venv venv
-source venv/bin/activate    # Windows: venv\Scripts\activate
-pip install -r requirements.txt
-playwright install chromium
-python app.py               # http://localhost:5001
-
-# Frontend (in another terminal)
-cd frontend
-npm install
-npm run dev                 # http://localhost:5173
-```
-
-</details>
-
-## Full API Reference
-
-<details>
-<summary><strong>Browser APIs</strong> — Navigation, DOM, Interaction (used internally by Task Agent, also available standalone)</summary>
+<summary><strong>Full Browser API Reference</strong></summary>
 
 ### Navigation
 
@@ -235,7 +251,7 @@ npm run dev                 # http://localhost:5173
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET/POST | `/api/browser/dom` | Get compressed DOM tree |
+| GET | `/api/browser/dom` | Get compressed DOM tree |
 | POST | `/api/browser/dom/detail` | Get element details (rect, attributes) |
 | POST | `/api/browser/text` | Get plain text content of a node |
 | GET | `/api/browser/source` | Get raw page HTML |
@@ -257,34 +273,24 @@ npm run dev                 # http://localhost:5173
 
 ### Token Optimization
 
-All action endpoints support optional parameters to reduce response size:
+All action endpoints support optional parameters:
 
-- `refresh_dom: false` — Skip DOM refresh after action (saves tokens)
+- `refresh_dom: false` — Skip DOM refresh after action
 - `fields: ["dom", "stats"]` — Return only selected fields
 
 </details>
 
-## Benchmarks
-
-| Page | Raw HTML | Compressed | Savings | Completeness |
-|------|--------:|-----------:|--------:|:------------:|
-| Google Homepage | 51K | 238 | 99.5% | 100% |
-| Google Search | 298K | 2,866 | 99.0% | 100% |
-| Wikipedia Article | 225K | 40K | 82.1% | 99.7% |
-| Baidu Homepage | 192K | 457 | 99.8% | 100% |
-| Baidu Search | 390K | 4,960 | 98.7% | 100% |
-
-> **Completeness** = percentage of visible text preserved in the compressed tree.
+---
 
 ## Supported LLM Providers
 
 | Provider | Model Examples |
 |----------|---------------|
-| DashScope (Qwen) | qwen-plus, qwen-max, qwen3.5-plus |
 | OpenAI | gpt-4o, gpt-4o-mini |
 | Anthropic | claude-sonnet-4-20250514, claude-haiku |
 | Google | gemini-2.0-flash, gemini-pro |
 | DeepSeek | deepseek-chat, deepseek-reasoner |
+| DashScope (Qwen) | qwen-plus, qwen-max, qwen3.5-plus |
 | Mistral | mistral-large-latest |
 | Groq | llama-3.1-70b |
 | xAI | grok-2 |
@@ -292,12 +298,17 @@ All action endpoints support optional parameters to reduce response size:
 | Zhipu | glm-4 |
 | Custom | Any OpenAI-compatible endpoint |
 
+---
+
 ## Roadmap
 
-- [x] DOM compression API with pluggable site-specific scripts
-- [x] Task Agent with multi-step planning and autonomous browsing
-- [x] Multi-provider LLM support (12+ providers)
-- [x] Chinese/English bilingual dashboard
+- [x] DOM compression with pluggable site-specific scripts
+- [x] Chat agent with session persistence and follow-ups
+- [x] Autonomous task engine with multi-step planning
+- [x] Guard nodes: CAPTCHA detection, cookie dismissal, loop prevention
+- [x] Watchdog monitoring with automatic intervention
+- [x] 12+ LLM provider support
+- [x] Bilingual Chinese/English dashboard
 - [ ] MCP (Model Context Protocol) server integration
 - [ ] Visual grounding — screenshot-based element location
 - [ ] Multi-agent collaboration
@@ -311,8 +322,7 @@ All action endpoints support optional parameters to reduce response size:
 | [React](https://github.com/facebook/react) | MIT | Frontend UI |
 | [LangGraph](https://github.com/langchain-ai/langgraph) | MIT | Agent workflow engine |
 | [LiteLLM](https://github.com/BerriAI/litellm) | MIT | Multi-provider LLM routing |
-| [Pydantic](https://github.com/pydantic/pydantic) | MIT | Schema validation |
 
 ## License
 
-Apache License 2.0 - see [LICENSE](LICENSE) for details.
+Apache License 2.0 — see [LICENSE](LICENSE) for details.

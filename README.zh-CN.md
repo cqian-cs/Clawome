@@ -9,106 +9,199 @@
 <h1 align="center">Clawome</h1>
 
 <p align="center">
-  <strong>一次 API 调用，搞定任何网页任务。</strong><br/>
-  给你的 AI 智能体一个自然语言目标 — Clawome 自动规划、浏览并返回结构化结果。
+  <strong>开源 AI 浏览器智能体。告诉它你想要什么，它浏览网页并带回结果。</strong>
 </p>
 
 <p align="center">
-  <a href="#任务智能体-api">任务智能体 API</a> &bull;
+  <a href="https://pypi.org/project/clawome/"><img src="https://img.shields.io/pypi/v/clawome?color=blue" alt="PyPI" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-green" alt="License" /></a>
+  <img src="https://img.shields.io/badge/Python-3.10+-blue" alt="Python" />
+</p>
+
+<p align="center">
   <a href="#快速开始">快速开始</a> &bull;
+  <a href="#工作原理">工作原理</a> &bull;
+  <a href="#对话-api">对话 API</a> &bull;
   <a href="#dom-压缩">DOM 压缩</a> &bull;
-  <a href="#性能基准">性能基准</a> &bull;
   <a href="#路线图">路线图</a>
 </p>
 
 ---
 
-## 任务智能体 API
-
-一个 POST 请求，Clawome 处理剩下的一切 — 规划子任务、控制浏览器、读取页面并返回结果。
+## 能做什么？
 
 ```bash
-curl -X POST http://localhost:5001/api/agent/start \
+clawome "帮我找一下今天 Hacker News 上排名前三的 AI 相关新闻"
+```
+
+```
+  > 帮我找一下今天 Hacker News 上排名前三的 AI 相关新闻
+
+  我来帮你浏览 Hacker News 找 AI 相关的新闻。
+
+  [task] 正在打开 https://news.ycombinator.com ...
+  [task] 扫描首页寻找 AI 相关文章 ...
+  [task] 提取标题、分数和链接 ...
+
+  [result] 今天 Hacker News 上排名前三的 AI 新闻：
+  1. "GPT-5 基准测试结果泄露" — 842 分
+  2. "开源视觉模型击败闭源模型" — 631 分
+  3. "Show HN: 真正能用的 AI 浏览器智能体" — 529 分
+```
+
+不需要浏览器插件，不需要复杂配置。用自然语言描述你想要的，剩下的交给它。
+
+---
+
+## 快速开始
+
+**前置条件：** Python 3.10+
+
+### 安装 & 启动
+
+```bash
+pip install clawome
+clawome start
+```
+
+引导你选择 LLM 服务商、输入 API Key，自动安装 Chromium 浏览器，然后启动服务。
+
+```
+服务 & 控制面板：http://localhost:5001
+```
+
+### 终端运行任务
+
+```bash
+clawome "查找斯坦福大学的 AI 研究生项目"
+clawome "对比 iPhone 16 Pro 和三星 S25 Ultra 的参数"
+clawome "东京这周末天气怎么样？"
+clawome status          # 查看进度
+clawome stop            # 取消任务
+```
+
+### 或使用 Web 控制面板
+
+打开 `http://localhost:5001`，与内置 AI 助手豆豆对话。它能理解上下文、处理追问，并自动执行复杂的浏览任务。
+
+<details>
+<summary><strong>从源码安装</strong></summary>
+
+```bash
+git clone https://github.com/CodingLucasLi/Clawome.git
+cd Clawome
+cp .env.example .env       # 填入你的 LLM API 密钥
+./start.sh                 # 启动后端 + 前端开发服务
+```
+
+```
+控制面板：http://localhost:5173
+API：     http://localhost:5001
+```
+
+或手动安装：
+
+```bash
+cd backend && python -m venv venv && source venv/bin/activate
+pip install -r requirements.txt && playwright install chromium
+python app.py               # http://localhost:5001
+
+cd frontend && npm install && npm run dev   # http://localhost:5173
+```
+
+</details>
+
+---
+
+## 工作原理
+
+Clawome 采用**双层智能体架构**：
+
+```
+你 ──→ 豆豆 (对话智能体) ──→ Runner (任务引擎) ──→ 浏览器
+        │                       │
+        │ 理解上下文            │ 规划子任务
+        │ 调用浏览器工具        │ 感知 → 规划 → 行动 → 感知
+        │ 管理会话              │ 守卫节点 (CAPTCHA、Cookie、循环检测)
+        │ 复杂任务交给 Runner   │ 异常检测 & 恢复
+        │                       │ 结果回传给豆豆
+        │                       │
+        └── 看门狗 ─────────────┘ (监控进度，卡住时主动干预)
+```
+
+**豆豆** 直接处理简单问题和浏览器操作。对于复杂的多步任务，它会委派给 **Runner** — 一个 LangGraph 状态机，自主规划、浏览和提取信息。
+
+### 核心特性
+
+| 特性 | 说明 |
+|------|------|
+| **自然语言驱动** | 用日常语言描述任务即可 |
+| **对话式交互** | 支持上下文理解和追问 |
+| **智能执行** | 感知 → 规划 → 行动 → 感知循环，支持自动重试 |
+| **守卫节点** | 自动处理 CAPTCHA、Cookie 弹窗、页面拦截 |
+| **100:1 DOM 压缩** | 30 万字符 HTML → 3000 token，高效利用 LLM |
+| **12+ LLM 服务商** | OpenAI、Anthropic、Google、DeepSeek、通义千问等 |
+| **中英双语** | 界面和智能体均支持中英文 |
+| **会话持久化** | 重启后可恢复对话 |
+
+---
+
+## 对话 API
+
+发送消息，轮询响应。豆豆会判断是直接回答还是启动浏览任务。
+
+```bash
+# 发送消息
+curl -X POST http://localhost:5001/api/chat/send \
   -H "Content-Type: application/json" \
-  -d '{"description": "查找纽约大学 Tandon 工程学院的 AI 相关研究生项目"}'
+  -d '{"message": "查找纽约大学 Tandon 工程学院的 AI 相关研究生项目"}'
+
+# 轮询响应
+curl http://localhost:5001/api/chat/status?since=0
+
+# 停止处理
+curl -X POST http://localhost:5001/api/chat/stop
+
+# 开始新会话
+curl -X POST http://localhost:5001/api/chat/reset
 ```
 
-轮询进度：
-
-```bash
-curl http://localhost:5001/api/agent/status
-```
+**响应格式：**
 
 ```json
 {
-  "status": "completed",
-  "final_result": "NYU Tandon 提供以下 AI 相关项目：...",
-  "subtasks": [
-    {"step": 1, "goal": "访问 NYU Tandon 网站", "status": "completed"},
-    {"step": 2, "goal": "提取项目列表", "status": "completed"}
-  ],
-  "llm_usage": {"calls": 12, "input_tokens": 25000, "total_tokens": 28000}
+  "status": "processing",
+  "session_id": "session_a1b2c3d4",
+  "messages": [
+    {"role": "user", "type": "text", "content": "查找 AI 项目..."},
+    {"role": "agent", "type": "result", "content": "我找到了 5 个项目..."}
+  ]
 }
-```
-
-需要时可取消：
-
-```bash
-curl -X POST http://localhost:5001/api/agent/stop
 ```
 
 | 方法 | 端点 | 说明 |
 |------|------|------|
-| POST | `/api/agent/start` | 提交任务（自然语言） |
-| GET | `/api/agent/status` | 轮询进度、子任务和结果 |
-| POST | `/api/agent/stop` | 取消正在运行的任务 |
+| POST | `/api/chat/send` | 发送消息 |
+| GET | `/api/chat/status?since=N` | 轮询消息（增量） |
+| POST | `/api/chat/stop` | 停止当前处理 |
+| POST | `/api/chat/reset` | 开始新会话 |
+| GET | `/api/chat/sessions` | 列出已保存的会话 |
+| POST | `/api/chat/sessions/restore` | 恢复会话 |
+| POST | `/api/chat/sessions/delete` | 删除会话 |
 
-**启动参数：**
+**状态值：** `processing`（智能体正在工作）→ `ready`（等待输入）
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `task` | string | 任务描述（必填） |
-| `max_steps` | number | 覆盖此任务的步数上限（默认：15） |
+### 更好的使用效果
 
-**状态值：** `idle` → `starting` → `running` → `completed` / `failed` / `cancelled`
-
-### 任务编写技巧
-
-```
-差：  "打开深圳大学网站看看有什么内容"
-好：  "打开 https://www.szu.edu.cn 首页，提取导航栏、最新3条新闻和通知公告"
-```
-
-- **给出 URL** — 避免让智能体猜测要去哪里
-- **指定提取内容** — "最新5条新闻" 比 "所有新闻" 更好
-- **复杂任务？增加步数** — `"max_steps": 30` 适用于多页面任务
-- **或者拆分为小任务** — 每个任务聚焦一个页面或一个目标
-
-### 工作原理
-
-```
-你的 API 调用 → 任务智能体 → 规划子任务 → 执行浏览器操作 → 返回结果
-                                  ↑                                  |
-                                  └── 评估并按需重新规划 ─────────────┘
-```
-
-智能体内部使用 LangGraph 状态机：感知页面 → 规划下一步 → 执行操作 → 感知结果 → 循环直到完成。
-
-### 特性
-- **自然语言任务** — 用自然语言描述你想要的
-- **多步规划** — 自动将复杂任务分解为子任务
-- **智能执行** — 感知 → 规划 → 行动 → 感知循环，支持重试和异常检测
-- **Markdown 结果** — 最终结果以 Markdown 格式输出，包含结构化数据
-- **12+ LLM 供应商** — OpenAI、Anthropic、Google、DeepSeek、通义千问、Moonshot、智谱、Mistral、Groq、xAI 等
-- **安全约束** — 仅限浏览器操作，硬性步数限制
+- **提供 URL** — `"打开 https://example.com 查找..."` 比让智能体猜更高效
+- **具体描述** — `"最新5条新闻标题"` 比 `"看看有什么内容"` 好
+- **追问对话** — 豆豆在同一会话中记住上下文
 
 ---
 
 ## DOM 压缩
 
-在底层，任务智能体通过 Clawome 的 DOM 压缩器来感知网页 — 将 30 万 token 的原始 HTML 压缩到约 3000 token 的简洁结构化树。
-
-**你也可以直接使用它**，作为独立 API 为你自己的智能体服务：
+Clawome 的 DOM 压缩器将原始 HTML 转化为精简的、LLM 友好的结构化树。你也可以独立使用它构建自己的智能体：
 
 ```bash
 # 打开页面
@@ -128,99 +221,22 @@ curl http://localhost:5001/api/browser/dom
 [3] a(href): Gmail
 ```
 
-- **100:1 压缩比** — 适用于典型网页
+| 页面 | 原始 HTML | 压缩后 | 节省 |
+|------|----------:|-------:|-----:|
+| Google 首页 | 51K | 238 | 99.5% |
+| Google 搜索 | 298K | 2,866 | 99.0% |
+| Wikipedia 文章 | 225K | 40K | 82.1% |
+| 百度首页 | 192K | 457 | 99.8% |
+
+特点：
+- **100:1 压缩比**，适用于典型网页
 - 保留可见文本、交互元素和语义结构
-- 层级节点 ID（如 `1.2.3`）用于精确元素定位
+- 层级节点 ID（`1.2.3`）用于精确元素定位
 - 针对 Google、Wikipedia、Stack Overflow、YouTube 等网站的专用优化器
-- Lite 模式可进一步节省 token
-
-### 控制面板
-- **浏览器实验场** — 交互式 DOM 查看器和浏览器控制
-- **智能体界面** — 任务输入、实时进度追踪、可折叠的步骤详情
-- **设置** — LLM 供应商配置、浏览器选项、压缩设置
-- **API 文档** — 内置文档，支持中英双语
-
-## 快速开始
-
-**前置条件：** Python 3.10+
-
-### pip 安装（推荐）
-
-```bash
-pip install clawome         # 从 PyPI 安装
-clawome start               # 引导配置 + 启动服务
-```
-
-如果 `clawome` 命令找不到，可以用：
-
-```bash
-python -m clawome start     # 备选启动方式
-```
-
-`clawome start` 会：
-1. 引导你选择 LLM 供应商、输入 API Key、选择模型
-2. 自动安装 Playwright Chromium 浏览器
-3. 启动后端服务和控制面板
-
-```
-服务 & 控制面板：http://localhost:5001
-```
-
-然后打开另一个终端运行任务：
-
-```bash
-clawome "去Hacker News找最新AI新闻"          # 提交任务并自动轮询
-clawome status                               # 查看进度
-clawome stop                                 # 取消任务
-clawome "复杂任务" --max-steps 30            # 指定步数上限
-clawome setup                                # 重新配置 LLM
-```
-
-> 配置保存在 `~/.clawome/.env`。也可以通过控制面板 > 设置 来配置。
-
-### 从源码安装
+- 支持通过控制面板自定义压缩脚本
 
 <details>
-<summary><strong>克隆并用 start.sh 运行</strong></summary>
-
-```bash
-git clone https://github.com/CodingLucasLi/Clawome.git
-cd Clawome
-cp .env.example .env       # 填入你的 LLM API 密钥
-./start.sh                 # 启动后端 + 前端
-```
-
-```
-控制面板：http://localhost:5173
-API：     http://localhost:5001
-```
-
-</details>
-
-<details>
-<summary><strong>手动安装</strong></summary>
-
-```bash
-# 后端
-cd backend
-python -m venv venv
-source venv/bin/activate    # Windows: venv\Scripts\activate
-pip install -r requirements.txt
-playwright install chromium
-python app.py               # http://localhost:5001
-
-# 前端（在另一个终端）
-cd frontend
-npm install
-npm run dev                 # http://localhost:5173
-```
-
-</details>
-
-## 完整 API 参考
-
-<details>
-<summary><strong>浏览器 API</strong> — 导航、DOM、交互（任务智能体内部使用，也可独立调用）</summary>
+<summary><strong>完整浏览器 API 参考</strong></summary>
 
 ### 导航
 
@@ -235,7 +251,7 @@ npm run dev                 # http://localhost:5173
 
 | 方法 | 端点 | 说明 |
 |------|------|------|
-| GET/POST | `/api/browser/dom` | 获取压缩后的 DOM 树 |
+| GET | `/api/browser/dom` | 获取压缩后的 DOM 树 |
 | POST | `/api/browser/dom/detail` | 获取元素详情（位置、属性） |
 | POST | `/api/browser/text` | 获取节点的纯文本内容 |
 | GET | `/api/browser/source` | 获取原始页面 HTML |
@@ -257,34 +273,24 @@ npm run dev                 # http://localhost:5173
 
 ### Token 优化
 
-所有操作端点支持可选参数以减少响应体积：
+所有操作端点支持可选参数：
 
-- `refresh_dom: false` — 操作后跳过 DOM 刷新（节省 token）
+- `refresh_dom: false` — 操作后跳过 DOM 刷新
 - `fields: ["dom", "stats"]` — 仅返回选定字段
 
 </details>
 
-## 性能基准
+---
 
-| 页面 | 原始 HTML | 压缩后 | 节省 | 完整度 |
-|------|----------:|-------:|-----:|:------:|
-| Google 首页 | 51K | 238 | 99.5% | 100% |
-| Google 搜索 | 298K | 2,866 | 99.0% | 100% |
-| Wikipedia 文章 | 225K | 40K | 82.1% | 99.7% |
-| 百度首页 | 192K | 457 | 99.8% | 100% |
-| 百度搜索 | 390K | 4,960 | 98.7% | 100% |
+## 支持的 LLM 服务商
 
-> **完整度** = 压缩树中保留的可见文本百分比。
-
-## 支持的 LLM 供应商
-
-| 供应商 | 模型示例 |
+| 服务商 | 模型示例 |
 |--------|----------|
-| 通义千问 (DashScope) | qwen-plus, qwen-max, qwen3.5-plus |
 | OpenAI | gpt-4o, gpt-4o-mini |
 | Anthropic | claude-sonnet-4-20250514, claude-haiku |
 | Google | gemini-2.0-flash, gemini-pro |
 | DeepSeek | deepseek-chat, deepseek-reasoner |
+| 通义千问 (DashScope) | qwen-plus, qwen-max, qwen3.5-plus |
 | Mistral | mistral-large-latest |
 | Groq | llama-3.1-70b |
 | xAI | grok-2 |
@@ -292,11 +298,16 @@ npm run dev                 # http://localhost:5173
 | 智谱 AI | glm-4 |
 | 自定义 | 任何 OpenAI 兼容端点 |
 
+---
+
 ## 路线图
 
 - [x] DOM 压缩 API，支持可插拔的站点专用脚本
-- [x] 任务智能体，支持多步规划和自主浏览
-- [x] 多供应商 LLM 支持（12+ 供应商）
+- [x] 对话智能体，支持会话持久化和追问
+- [x] 自主任务引擎，支持多步规划
+- [x] 守卫节点：CAPTCHA 检测、Cookie 弹窗清除、循环防护
+- [x] 看门狗监控，自动干预
+- [x] 12+ LLM 服务商支持
 - [x] 中英双语控制面板
 - [ ] MCP（模型上下文协议）服务器集成
 - [ ] 视觉定位 — 基于截图的元素定位
@@ -310,9 +321,8 @@ npm run dev                 # http://localhost:5173
 | [Flask](https://github.com/pallets/flask) | BSD 3-Clause | REST API 服务器 |
 | [React](https://github.com/facebook/react) | MIT | 前端界面 |
 | [LangGraph](https://github.com/langchain-ai/langgraph) | MIT | 智能体工作流引擎 |
-| [LiteLLM](https://github.com/BerriAI/litellm) | MIT | 多供应商 LLM 路由 |
-| [Pydantic](https://github.com/pydantic/pydantic) | MIT | 数据校验 |
+| [LiteLLM](https://github.com/BerriAI/litellm) | MIT | 多服务商 LLM 路由 |
 
 ## 许可证
 
-Apache License 2.0 - 详见 [LICENSE](LICENSE)。
+Apache License 2.0 — 详见 [LICENSE](LICENSE)。
