@@ -122,11 +122,7 @@ def _validate_config():
             "LLM API Key is not configured. Please set it in Settings > Agent."
         )
 
-    # Providers that do NOT need api_base (LiteLLM routes automatically)
-    NO_API_BASE = {
-        "anthropic", "google", "deepseek", "moonshot",
-        "zhipu", "volcengine", "minimax", "mistral", "groq", "xai",
-    }
+    from llm.provider import NO_API_BASE
     provider = settings.llm.provider or "dashscope"
     if provider not in NO_API_BASE and not settings.llm.api_base:
         return (
