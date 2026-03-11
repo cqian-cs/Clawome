@@ -681,7 +681,19 @@ def api_config_set():
     updates = _body()
     if not updates:
         return _err("No values provided")
+    # Detect LLM config changes that require graph rebuild
+    llm_keys = {"llm_provider", "llm_api_key", "llm_api_base", "llm_model"}
+    llm_changed = any(k in updates for k in llm_keys)
     config.set_values(updates)
+    # Reload settings singleton + rebuild Doudou's chat agent graph
+    if llm_changed:
+        try:
+            from task_agent.agent_config.settings import reload_settings
+            reload_settings()
+            from task_agent.chat.orchestrator import reset_graph
+            reset_graph()
+        except Exception as e:
+            print(f"[config] Failed to reset chat graph: {e}")
     return jsonify({"status": "ok", "config": config.get_all()})
 
 
